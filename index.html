@@ -1756,10 +1756,11 @@ function buildSprites(){
   ST.seat.slots.forEach(s => SPRITES.push({y: s.y - 0.9, d: () => drawChair(s)}));
   TABLES.forEach(([tx, ty]) => SPRITES.push({y: ty + 11.5, d: () => drawTable(tx, ty)}));
   SPRITES.push({y: 604, d: () => drawPlant(640, 604)});
-  ST.kiosk.slots.forEach(s => SPRITES.push({y: s.y - 1, d: () => drawKiosk(s)}));
-  ST.photo.slots.forEach(s => SPRITES.push({y: s.y - 1, d: t => drawPhotoWall(s, t)}));
+  // check-in, photo wall and water station stand against the back wall, so everyone walks in front of them
+  ST.kiosk.slots.forEach(s => SPRITES.push({y: 575, d: () => drawKiosk(s)}));
+  ST.photo.slots.forEach(s => SPRITES.push({y: 575, d: t => drawPhotoWall(s, t)}));
   ST.scale.slots.forEach(s => SPRITES.push({y: s.y - 2, d: () => drawScale(s)}));
-  ST.water.slots.forEach(s => SPRITES.push({y: s.y - 1, d: () => drawWaterStation(s)}));
+  ST.water.slots.forEach(s => SPRITES.push({y: 575, d: () => drawWaterStation(s)}));
 }
 buildSprites();
 
