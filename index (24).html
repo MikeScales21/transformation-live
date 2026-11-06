@@ -1,0 +1,1370 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Transformation Live</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=Figtree:wght@400;500;600;700;800&family=Chivo+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: the 16:9 stream stage on top exactly as OBS captures it; producer console below with test uploads, overlay text, render quality and app hookup. Deliberately single dark theme (broadcast tool). */
+:root{
+  --ink:#0d101c;
+  --panel:#161a29;
+  --line:#2a3049;
+  --text:#ece9f2;
+  --muted:#9b9db5;
+  --live:#ff6a3d;
+  --visor:#5ef0d6;
+  --f-display:"Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-body:"Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono:"Chivo Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color-scheme:dark;
+}
+html,body{background:var(--ink);color:var(--text)}
+body{font-family:var(--f-body);font-size:15px;line-height:1.5;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 48px}
+.wrap{max-width:1280px;margin:0 auto;display:grid;gap:20px}
+.top{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:end;justify-content:space-between}
+.top h1{font-family:var(--f-display);font-weight:800;font-size:clamp(26px,4vw,38px);line-height:1.05;margin:0;letter-spacing:-.01em;text-wrap:balance}
+.top p{margin:6px 0 0;color:var(--muted);max-width:66ch}
+.top .intro{min-width:0}
+button{font:600 14px/1 var(--f-body);border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--text);padding:11px 14px;cursor:pointer}
+button:hover{border-color:var(--muted)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--visor);outline-offset:2px}
+button.primary{background:var(--live);border-color:var(--live);color:#1a0d07}
+button.primary:hover{filter:brightness(1.08)}
+.stage-box{border-radius:10px;overflow:hidden;border:1px solid var(--line);background:#0b0e19;max-width:100%}
+canvas{display:block;width:100%;height:auto;aspect-ratio:16/9;max-width:100%}
+canvas:fullscreen{width:100vw;height:100vh;object-fit:contain;background:#000}
+.console{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;display:grid;gap:14px;align-content:start;min-width:0}
+.card.wide{grid-column:1/-1}
+.card h2{font-weight:700;font-size:18px;margin:0}
+.card .hint{color:var(--muted);font-size:13px;margin:-8px 0 0}
+label{display:grid;gap:6px;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+input,select{font:500 15px var(--f-body);color:var(--text);background:var(--ink);border:1px solid var(--line);border-radius:8px;padding:10px 12px;width:100%;min-width:0;text-transform:none;letter-spacing:0}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chips button{font-size:13px;padding:8px 11px;border-radius:99px}
+.toggle{display:flex;align-items:center;gap:10px;text-transform:none;letter-spacing:0;font-size:14px;color:var(--text);font-weight:500}
+.toggle input{width:18px;height:18px;accent-color:var(--live)}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:16px;margin:0;padding:0;list-style:none;counter-reset:s}
+.steps li{counter-increment:s;display:grid;gap:4px;min-width:0}
+.steps li::before{content:"Step " counter(s);font:600 11px var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--live)}
+.steps b{font-weight:600}
+.steps span{color:var(--muted);font-size:14px}
+pre{margin:0;background:var(--ink);border:1px solid var(--line);border-radius:8px;padding:14px;overflow-x:auto;font:13px/1.55 var(--f-mono);color:#cfd3ea}
+.note{font-size:13px;color:var(--muted);margin:0}
+.note b{color:var(--text);font-weight:600}
+@media (max-width:520px){.row{grid-template-columns:1fr}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="intro">
+      <h1>Transformation Live</h1>
+      <p>Every character is a challenge member. A meal upload sends them to cook at the stove and eat at a table; meal prep gets chopped and boxed; a workout sends them to the right machine to do the exercise. Running on demo uploads until your app is connected.</p>
+    </div>
+    <button id="fs" class="primary" type="button">Fullscreen for streaming</button>
+  </header>
+
+  <div class="stage-box">
+    <canvas id="stage" role="img" aria-label="Animated gym and kitchen where members act out their latest uploads"></canvas>
+  </div>
+
+  <section class="console">
+    <form class="card" id="testForm">
+      <h2>Send a test upload</h2>
+      <p class="hint">Pretend to be a member posting in the app.</p>
+      <div class="row">
+        <label for="tName">Member<input id="tName" value="Jordan" maxlength="16" autocomplete="off"></label>
+        <label for="tType">Upload type
+          <select id="tType">
+            <option value="workout">Workout</option>
+            <option value="meal">Meal</option>
+            <option value="mealprep">Meal prep</option>
+          </select>
+        </label>
+      </div>
+      <label for="tWhat">What they posted<input id="tWhat" value="Back squats 5x5" maxlength="40" autocomplete="off"></label>
+      <div class="chips" id="chips">
+        <button type="button" data-t="workout" data-w="5k treadmill run">Run</button>
+        <button type="button" data-t="workout" data-w="Bench press 4x8">Bench</button>
+        <button type="button" data-t="workout" data-w="Dumbbell curls">Curls</button>
+        <button type="button" data-t="workout" data-w="Shoulder press">Shoulder press</button>
+        <button type="button" data-t="workout" data-w="Lat pulldowns">Lat pulldown</button>
+        <button type="button" data-t="workout" data-w="45 min spin class">Spin</button>
+        <button type="button" data-t="workout" data-w="100 push-ups">Push-ups</button>
+        <button type="button" data-t="workout" data-w="Core & abs">Abs</button>
+        <button type="button" data-t="workout" data-w="Yoga flow">Yoga</button>
+        <button type="button" data-t="meal" data-w="Chicken, rice & greens">Chicken & rice</button>
+        <button type="button" data-t="mealprep" data-w="Sunday prep: 5 lunches">Sunday prep</button>
+      </div>
+      <button class="primary" type="submit">Send to scene</button>
+    </form>
+
+    <div class="card">
+      <h2>Stream overlay</h2>
+      <p class="hint">Shown top-right on the stream. Viewers can't click a stream, so keep the link short.</p>
+      <label for="cHead">Call to action<input id="cHead" maxlength="28"></label>
+      <div class="row">
+        <label for="cLink">Sign-up link<input id="cLink" maxlength="28"></label>
+        <label for="cCode">Promo code<input id="cCode" maxlength="14"></label>
+      </div>
+      <div class="row">
+        <label for="quality">Render quality
+          <select id="quality">
+            <option value="3">4K (3840×2160)</option>
+            <option value="2">1440p</option>
+            <option value="1.5">1080p</option>
+          </select>
+        </label>
+        <label for="pace">Activity length
+          <select id="pace">
+            <option value="1.5">Relaxed</option>
+            <option value="1" selected>Normal</option>
+            <option value="0.6">Quick</option>
+          </select>
+        </label>
+      </div>
+      <label class="toggle" for="demo"><input type="checkbox" id="demo" checked> Demo uploads</label>
+    </div>
+
+    <div class="card wide">
+      <h2>Connect your app</h2>
+      <ol class="steps">
+        <li><b>App sends an event</b><span>When a member posts a meal, meal prep or workout, your backend pushes a small JSON message to a realtime channel (Supabase Realtime, Firebase, Pusher or your own WebSocket).</span></li>
+        <li><b>Host this scene</b><span>Save the page as an .html file on any web host and paste your channel address into <code>FEED.websocketUrl</code> (or a JSON endpoint into <code>FEED.pollUrl</code>) at the top of the script.</span></li>
+        <li><b>Stream it in 4K</b><span>In OBS add a Browser Source at 3840×2160 (or 1920×1080) pointing at that page, then go live to YouTube and Kick. For 24/7 streaming, run OBS on a cloud machine with a GPU.</span></li>
+      </ol>
+<pre>// one message per upload
+{
+  "id": "evt_8812",
+  "user": { "id": "u_331", "name": "Priya" },
+  "type": "workout",              // "meal" | "mealprep" | "workout"
+  "title": "Back squats 5x5",
+  "category": "squat"             // optional: treadmill, bike, bench, squat, cable, dumbbell, mat
+}
+
+// also works from any script on the hosted page:
+window.pushUpload({ user:{ name:"Priya" }, type:"meal", title:"Overnight oats" });</pre>
+      <p class="note"><b>Before going live:</b> only show members who opted in, and use first names or handles. Each member gets the same look every time (built from their user id). If no category is sent, the scene picks the station from the title. This preview can't reach outside servers, so the live hookup only works once you host the file yourself.</p>
+    </div>
+  </section>
+</div>
+
+<script>
+/* ======== CONNECT YOUR APP HERE (works when self-hosted) ======== */
+const FEED = {
+  websocketUrl: "",   // e.g. "wss://your-relay.example.com/uploads"
+  pollUrl: "",        // e.g. "https://api.yourapp.com/challenge/latest" returning an array of events
+  pollEveryMs: 4000
+};
+/* ================================================================ */
+
+const W = 1280, H = 720;
+const cv = document.getElementById('stage');
+const main = cv.getContext('2d');
+let c = main, DPR = 3;
+const FB = '"Figtree", system-ui, sans-serif';
+const FM = '"Chivo Mono", ui-monospace, monospace';
+const LIVE = '#ff6a3d';
+
+const rand = (a, b) => a + Math.random() * (b - a);
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function hash(s){let h=2166136261;for(const ch of String(s)){h^=ch.charCodeAt(0);h=Math.imul(h,16777619)}return h>>>0}
+function rng(seed){let a=seed>>>0;return()=>{a=(a+0x6D2B79F5)>>>0;let t=Math.imul(a^(a>>>15),1|a);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296}}
+function shade(hex, amt){
+  const n = parseInt(hex.slice(1), 16); let r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+  const t = amt < 0 ? 0 : 255, p = Math.abs(amt);
+  r = Math.round((t - r) * p + r); g = Math.round((t - g) * p + g); b = Math.round((t - b) * p + b);
+  return '#' + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
+}
+function rr(x, y, w, h, r){r=Math.min(r,w/2,h/2);c.beginPath();c.moveTo(x+r,y);c.arcTo(x+w,y,x+w,y+h,r);c.arcTo(x+w,y+h,x,y+h,r);c.arcTo(x,y+h,x,y,r);c.arcTo(x,y,x+w,y,r);c.closePath()}
+function box(x,y,w,h,r,col){c.fillStyle=col;rr(x,y,w,h,r);c.fill()}
+function circ(x,y,r,col){c.fillStyle=col;c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fill()}
+function ell(x,y,rx,ry,col,rot){c.fillStyle=col;c.beginPath();c.ellipse(x,y,rx,ry,rot||0,0,Math.PI*2);c.fill()}
+function seg(a,b,w,col){c.strokeStyle=col;c.lineWidth=w;c.lineCap='round';c.beginPath();c.moveTo(a[0],a[1]);c.lineTo(b[0],b[1]);c.stroke()}
+function line(x1,y1,x2,y2,w,col){seg([x1,y1],[x2,y2],w,col)}
+function vgrad(y0,y1,stops){const g=c.createLinearGradient(0,y0,0,y1);stops.forEach((s,i)=>g.addColorStop(i/(stops.length-1),s));return g}
+function hgrad(x0,x1,stops){const g=c.createLinearGradient(x0,0,x1,0);stops.forEach((s,i)=>g.addColorStop(i/(stops.length-1),s));return g}
+const lerp2 = (a,b,t) => [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t];
+const ease = t => t*t*(3-2*t);
+
+/* two-bone IK: returns the joint between A and B, on the side closest to `pref` */
+function ik(A, B, l1, l2, pref){
+  const dx=B[0]-A[0], dy=B[1]-A[1], d=Math.hypot(dx,dy)||0.001, dd=Math.min(d,l1+l2-0.01);
+  const a=(l1*l1-l2*l2+dd*dd)/(2*dd), h=Math.sqrt(Math.max(0,l1*l1-a*a));
+  const ux=dx/d, uy=dy/d, px=A[0]+ux*a, py=A[1]+uy*a;
+  const j1=[px-uy*h,py+ux*h], j2=[px+uy*h,py-ux*h];
+  return ((j1[0]-px)*pref[0]+(j1[1]-py)*pref[1]) >= ((j2[0]-px)*pref[0]+(j2[1]-py)*pref[1]) ? j1 : j2;
+}
+
+/* ================= stations ================= */
+const mk = (label, pts) => ({label, slots: pts.map(([x, y]) => ({x, y, occ: null}))});
+const ST = {
+  treadmill: mk('a treadmill', [[72,238],[168,238],[264,238]]),
+  bike:      mk('a bike', [[388,238],[470,238],[552,238]]),
+  bench:     mk('a bench', [[100,392],[236,392]]),
+  squat:     mk('the squat rack', [[398,392],[540,392]]),
+  cable:     mk('the cable machine', [[66,532]]),
+  dumbbell:  mk('the dumbbells', [[156,532],[212,532],[268,532]]),
+  mat:       mk('a mat', [[384,532],[464,532],[548,532]]),
+  stove:     mk('the stove', [[700,220],[752,220],[826,220],[870,220]]),
+  prep:      mk('the prep counter', [[1030,220],[1108,220]]),
+  seat:      {label:'a seat', slots: []}
+};
+const TABLES = [[815,334],[1075,334],[815,474],[1075,474]];
+TABLES.forEach(([tx, ty]) => [-1, 1].forEach(side => ST.seat.slots.push({x: tx + side*62, y: ty + 12, occ: null, tx, ty, side})));
+const MATCOL = ['#6b5bb5','#2f8f86','#c55a4b'];
+const FOODCOL = ['#e9a23b','#d9583b','#f2d27a','#b97a4a','#e8c28c'];
+
+/* ================= looks ================= */
+const SKIN = ['#f7d7bd','#f1c6a0','#e4ad86','#cf9268','#b0764c','#8c5a37','#6a4026','#4f2e1b'];
+const HAIRC = ['#1b1411','#2d1f17','#4a2f1f','#6e4426','#9a6b3a','#d8b064','#ecc985','#a8441f','#151515'];
+const STYLES = ['short','spiky','buzz','ponytail','bun','bob','curly','long','fade','ponytail','bun'];
+const TOPC = ['#7ccf6a','#3fb5a0','#3b9bd8','#f06b4a','#86e3d8','#f2c14e','#e8577a','#8c7ae6','#f4f4f4','#2e3445','#5fd18c','#ff8f6b'];
+const BOTC = ['#1f3b57','#21485a','#2b2f3a','#1d4f4a','#363b54','#173048'];
+const SHOEC = ['#ffffff','#4fc3c9','#e8603c','#3d8bd9','#ececec','#2a2a2a','#7ccf6a'];
+const BANDC = ['#7ccf6a','#ff6a3d','#3b9bd8','#f2c14e','#e8577a'];
+function makeLook(id){
+  const r = rng(hash(id)), p = a => a[Math.floor(r()*a.length)];
+  const L = {skin:p(SKIN), hairC:p(HAIRC), style:p(STYLES), top:p(['tee','tee','tank','crop','long','tank']),
+    topC:p(TOPC), bottom:p(['shorts','leggings','joggers','leggings']), botC:p(BOTC), shoe:p(SHOEC),
+    headband: r()<0.22 ? p(BANDC) : null, earbuds: r()<0.3, armband: r()<0.22};
+  if (L.top==='crop' && L.bottom==='shorts') L.bottom='leggings';
+  L.skinD = shade(L.skin,-0.16); L.skinDD = shade(L.skin,-0.3);
+  L.topD = shade(L.topC,-0.18); L.botD = shade(L.botC,-0.22); L.shoeD = shade(L.shoe,-0.15);
+  L.hairL = shade(L.hairC, 0.18);
+  return L;
+}
+
+/* ================= state ================= */
+const settings = {head:'JOIN THE CHALLENGE', link:'yourlink.com/8week', code:'BOTS20', demo:true, pace:1, quality:3};
+try { Object.assign(settings, JSON.parse(localStorage.getItem('tl-settings') || '{}')); } catch(e) {}
+function saveSettings(){ try { localStorage.setItem('tl-settings', JSON.stringify(settings)); } catch(e) {} }
+
+const bots = new Map();
+const particles = [], pops = [];
+const stats = {meals: 0, workouts: 0};
+const feed = [];
+const seenIds = new Set();
+let tickerX = 0, demoT = 0.5, clock = 0;
+
+const ROOM_BOT = 560, LOBBY_Y0 = 600, LOBBY_Y1 = 668, HALL = 600;
+function roomOf(x, y){ return y >= ROOM_BOT ? 'lobby' : (x < 640 ? 'gym' : 'kitchen'); }
+function routeTo(b, tx, ty){
+  const from = roomOf(b.x, b.y), to = roomOf(tx, ty), p = [];
+  if (from === to) p.push([tx, ty]);
+  else { if (from !== 'lobby') p.push([b.x, HALL]); if (to !== 'lobby') p.push([tx, HALL]); p.push([tx, ty]); }
+  b.path = p;
+}
+
+function getBot(id, name){
+  let b = bots.get(id);
+  if (!b){
+    if (bots.size >= 42){
+      let oldest = null; for (const o of bots.values()) if (o.mode === 'idle' && !o.tasks.length && (!oldest || o.last < oldest.last)) oldest = o;
+      if (oldest) bots.delete(oldest.id);
+    }
+    b = {id, name: String(name).slice(0, 14), look: makeLook(id),
+      x: rand(60, 1220), y: rand(LOBBY_Y0, LOBBY_Y1), path: [], speed: rand(70, 86), mode: 'idle',
+      act: null, tasks: [], cur: null, step: 0, slot: null, carry: null, wander: rand(1, 5),
+      bubble: null, bubbleT: 0, flash: 0, phase: Math.random()*10, facing: Math.random()<.5?1:-1, last: 0, waitT: 0,
+      idle: Math.floor(Math.random()*3), idleT: rand(3,8), blink: rand(2,5)};
+    bots.set(id, b);
+  }
+  return b;
+}
+
+const CATS = [
+  ['bike', /bike|cycl|spin|peloton/i],
+  ['treadmill', /run|jog|treadmill|cardio|walk|hiit|sprint|\d+\s?k\b/i],
+  ['squat', /squat|leg|deadlift|lunge|glute/i],
+  ['cable', /lat|pulldown|pull.?up|cable|back|\brow/i],
+  ['dumbbell', /curl|dumbbell|arm|bicep|tricep|shoulder/i],
+  ['mat', /yoga|stretch|core|abs|plank|mobility|pilates|crunch|sit.?up|push.?up|press.?up/i],
+  ['bench', /bench|chest|press/i]
+];
+function guessCat(t){ for (const [k, re] of CATS) if (re.test(t)) return k; return pick(['dumbbell','mat','treadmill','bike']); }
+function subOf(cat, t){
+  if (cat === 'dumbbell') return /shoulder|press|overhead/i.test(t) ? 'press' : 'curl';
+  if (cat === 'mat') return /push|press.?up/i.test(t) ? 'pushup' : /yoga|stretch|mobility|pilates/i.test(t) ? 'yoga' : 'crunch';
+  return null;
+}
+
+function normalize(e){
+  const u = e.user || {};
+  const name = u.name || u.handle || e.name || 'Member';
+  const id = u.id || e.userId || name;
+  const rawType = String(e.type || '').toLowerCase().replace(/[\s_-]/g, '');
+  const title = String(e.title || e.detail || e.description || '').slice(0, 60);
+  let type = 'workout';
+  if (/prep/.test(rawType) || (/meal|food|nutrition/.test(rawType) && /prep/i.test(title))) type = 'mealprep';
+  else if (/meal|food|nutrition|eat|breakfast|lunch|dinner|snack/.test(rawType)) type = 'meal';
+  const okCat = ['treadmill','bike','bench','squat','cable','dumbbell','mat'];
+  const category = type === 'workout' ? (okCat.includes(e.category) ? e.category : guessCat(title)) : null;
+  return {id: e.id, uid: String(id), name, type, title: title || (type === 'workout' ? 'Workout' : 'Meal'), category,
+          sub: subOf(category, title), food: FOODCOL[hash(title) % FOODCOL.length]};
+}
+function plan(ev){
+  if (ev.type === 'meal') return [{claim:'stove'},{act:'cook',dur:7},{release:1,carry:'plate'},{claim:'seat'},{act:'eat',dur:8},{release:1,carry:null},{home:1}];
+  if (ev.type === 'mealprep') return [{claim:'stove'},{act:'cook',dur:7},{release:1,carry:'pan'},{claim:'prep'},{act:'pack',dur:8},{release:1,carry:'boxes'},{home:1}];
+  return [{claim:ev.category},{act:ev.category,dur:11},{release:1},{home:1}];
+}
+
+function pushUpload(raw){
+  if (!raw) return;
+  if (raw.id){ if (seenIds.has(raw.id)) return; seenIds.add(raw.id); }
+  const ev = normalize(raw);
+  ev.steps = plan(ev);
+  const b = getBot(ev.uid, ev.name);
+  b.last = performance.now();
+  if (b.tasks.length < 3) b.tasks.push(ev);
+  b.flash = 3;
+  pops.push({x: b.x, y: b.y - 90, text: ev.type === 'workout' ? 'NEW WORKOUT' : ev.type === 'mealprep' ? 'MEAL PREP' : 'NEW MEAL', life: 2.2});
+  if (ev.type === 'workout') stats.workouts++; else stats.meals++;
+  const verb = ev.type === 'workout' ? 'did' : ev.type === 'mealprep' ? 'prepped' : 'logged';
+  feed.unshift(`${ev.name} ${verb} ${ev.title}`);
+  if (feed.length > 14) feed.pop();
+}
+window.pushUpload = pushUpload;
+window.addEventListener('message', e => { const d = e.data; if (d && d.kind === 'upload') pushUpload(d.event || d); });
+
+/* ================= task runner ================= */
+function next(b){
+  const s = b.cur && b.cur.steps[b.step];
+  if (!s){ b.cur = null; b.mode = 'idle'; b.bubble = null; b.wander = rand(2, 5); return; }
+  if (s.claim){
+    const st = ST[s.claim], free = st.slots.filter(x => !x.occ);
+    if (!free.length){ b.mode = 'wait'; b.waitT = 1; const wt = 'waiting for ' + st.label + '…'; if (b.bubble !== wt){ b.bubble = wt; b.bubbleT = 0; } return; }
+    const sl = pick(free); sl.occ = b; b.slot = sl; b.bubble = null; b.mode = 'walk';
+    routeTo(b, sl.x, sl.y); b.arrive = () => { b.step++; next(b); };
+    return;
+  }
+  if (s.act){
+    b.mode = 'act'; b.act = {kind: s.act, sub: b.cur.sub, t: 0, dur: s.dur * settings.pace};
+    b.bubble = s.act === 'eat' ? 'eating ' + b.cur.title : s.act === 'pack' ? 'chopping & boxing up' : b.cur.title;
+    b.bubbleT = 0; b.phase = 0;
+    return;
+  }
+  if (s.release){ if (b.slot){ b.slot.occ = null; b.slot = null; } if ('carry' in s) b.carry = s.carry; b.step++; next(b); return; }
+  if (s.home){ b.mode = 'walk'; b.bubble = null; routeTo(b, rand(60, 1220), rand(LOBBY_Y0, LOBBY_Y1)); b.arrive = () => { b.carry = null; b.step++; next(b); }; }
+}
+
+const WORKOUT_KINDS = ['treadmill','bike','bench','squat','cable','dumbbell','mat'];
+function update(dt){
+  clock += dt;
+  for (const b of bots.values()){
+    b.phase += dt; b.bubbleT += dt;
+    if (b.flash > 0) b.flash -= dt;
+    b.blink -= dt; if (b.blink < -0.13) b.blink = rand(2, 6);
+    if (b.path.length){
+      const [tx, ty] = b.path[0], dx = tx - b.x, dy = ty - b.y, d = Math.hypot(dx, dy), step = b.speed * dt;
+      if (Math.abs(dx) > 0.5) b.facing = dx > 0 ? 1 : -1;
+      if (d <= step){ b.x = tx; b.y = ty; b.path.shift(); if (!b.path.length && b.arrive){ const f = b.arrive; b.arrive = null; f(); } }
+      else { b.x += dx / d * step; b.y += dy / d * step; }
+      continue;
+    }
+    if (b.mode === 'act'){
+      b.act.t += dt;
+      const k = b.act.kind;
+      if (k === 'cook' && Math.random() < dt * 7) particles.push({x: b.x + 12 + rand(-5, 5), y: 162, vx: rand(-5, 5), vy: rand(-24, -14), life: 1.6, max: 1.6, kind: 'steam'});
+      if (WORKOUT_KINDS.includes(k) && b.act.t > 3 && Math.random() < dt * 1.2) particles.push({x: b.x + rand(-6, 6), y: b.y - (k==='bench'||k==='mat'?30:66), vx: rand(-16, 16), vy: rand(-30, -14), life: 0.7, max: 0.7, kind: 'sweat'});
+      if (b.act.t >= b.act.dur){ b.act = null; b.mode = 'busy'; b.step++; next(b); }
+      continue;
+    }
+    if (b.mode === 'wait'){ b.waitT -= dt; if (b.waitT <= 0){ b.mode = 'busy'; next(b); } continue; }
+    if (b.mode === 'idle'){
+      b.idleT -= dt; if (b.idleT <= 0){ b.idleT = rand(4, 9); b.idle = Math.random() < 0.5 ? 1 : Math.random() < 0.5 ? 0 : 2; }
+      if (b.tasks.length){ b.cur = b.tasks.shift(); b.step = 0; b.mode = 'busy'; next(b); continue; }
+      b.wander -= dt;
+      if (b.wander <= 0){ b.wander = rand(5, 11); routeTo(b, clamp(b.x + rand(-180, 180), 40, 1240), rand(LOBBY_Y0, LOBBY_Y1)); }
+    }
+  }
+  for (let i = particles.length - 1; i >= 0; i--){
+    const p = particles[i]; p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt;
+    if (p.kind === 'sweat') p.vy += 90 * dt;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+  for (let i = pops.length - 1; i >= 0; i--){ const p = pops[i]; p.life -= dt; p.y -= 14 * dt; if (p.life <= 0) pops.splice(i, 1); }
+  if (settings.demo){ demoT -= dt; if (demoT <= 0){ pushUpload(demoEvent()); demoT = rand(1.8, 4); } }
+  tickerX -= 60 * dt;
+}
+
+/* ================= demo data ================= */
+const NAMES = ['Jade','Marco','Priya','Tom','Aisha','Liam','Sofia','Kwame','Ella','Dan','Mei','Ruben','Zara','Owen','Nina','Luca','Grace','Sam','Imani','Theo','Chloe','Arjun','Maya','Finn','Leah','Tariq'];
+const MEALS = ['Chicken, rice & greens','Overnight oats','Salmon & sweet potato','Greek yogurt bowl','Turkey chilli','Egg white omelette','Protein pancakes','Tofu stir fry','Steak & veg','Tuna wrap','Lentil curry'];
+const PREPS = ['Meal prep: 5x chicken & rice','Turkey chilli x4','Sunday prep: 6 lunches','Prep: beef & broccoli x5'];
+const WORKOUTS = ['5k treadmill run','HIIT sprints','45 min spin class','Back squats 5x5','Leg day','Bench press 4x8','100 push-ups','Dumbbell curls','Shoulder press','Yoga flow','Core & abs','Deadlifts 3x5','Lat pulldowns','Incline walk 30 min','Bike intervals','Cable rows','Mobility 20 min'];
+function demoEvent(){
+  const r = Math.random(), name = pick(NAMES);
+  if (r < 0.52) return {user:{name}, type:'workout', title: pick(WORKOUTS)};
+  if (r < 0.88) return {user:{name}, type:'meal', title: pick(MEALS)};
+  return {user:{name}, type:'mealprep', title: pick(PREPS)};
+}
+
+/* ================= people: poses ================= */
+const TH = 15, SH = 15, UA = 11, FA = 10.5;
+function standLegs(P, spread){
+  const s = spread || 5.5;
+  P.hips = [[-4.5, P.H[1]], [4.5, P.H[1]]];
+  P.feet = [[-s, 0], [s, 0]];
+  P.knees = [ik(P.hips[0], P.feet[0], TH, SH, [-1, -0.1]), ik(P.hips[1], P.feet[1], TH, SH, [1, -0.1])];
+}
+function armsTo(P, prefL, prefR){
+  P.E = [ik(P.S[0], P.Hn[0], UA, FA, prefL), ik(P.S[1], P.Hn[1], UA, FA, prefR)];
+}
+
+function poseFor(b){
+  const p = b.phase, k = b.mode === 'act' ? b.act.kind : null, sub = b.mode === 'act' ? b.act.sub : null;
+  if (b.path.length) return poseWalk(b, p);
+  switch (k){
+    case 'treadmill': return poseRun(p);
+    case 'bike': return poseBike(p);
+    case 'bench': return poseBench(p);
+    case 'squat': return poseSquat(p);
+    case 'cable': return poseCable(p);
+    case 'dumbbell': return sub === 'press' ? posePress(p) : poseCurl(p);
+    case 'mat': return sub === 'pushup' ? posePushup(p) : sub === 'yoga' ? poseYoga(p) : poseCrunch(p);
+    case 'cook': return poseCook(p);
+    case 'pack': return posePrep(p);
+    case 'eat': return poseEat(b, p);
+  }
+  return poseIdle(b, p);
+}
+
+function poseIdle(b, p){
+  const br = Math.sin(p * 2) * 0.4, v = b.carry ? 3 : b.idle;
+  const P = {view:'front', flip:1, H:[0,-30], N:[0,-52+br], Hd:[0,-62+br], expr:'smile'};
+  standLegs(P);
+  P.S = [[-8.5,-50+br],[8.5,-50+br]];
+  if (v === 1){ P.Hn = [[-7,-33],[7,-33]]; armsTo(P, [-1,0], [1,0]); }
+  else if (v === 2){ P.Hn = [[-11,-30],[15,-64]]; armsTo(P, [-1,0.2], [1,0.7]); P.thumb = true; }
+  else if (v === 3){ P.Hn = [[-6,-38],[6,-38]]; armsTo(P, [-1,0.6], [1,0.6]); P.prop = 'carryFront'; }
+  else { P.Hn = [[-11.5,-30],[11.5,-30]]; armsTo(P, [-1,0.2], [1,0.2]); }
+  return P;
+}
+function poseWalk(b, p){
+  const a = p * 9.5, s = Math.sin(a), cA = Math.cos(a);
+  const P = {view:'side', flip:b.facing, expr:'smile'};
+  P.H = [0, -29.6 - Math.abs(s) * 0.9];
+  P.hips = [P.H, P.H];
+  P.feet = [[-6.5*s, -Math.max(0,-cA)*3], [6.5*s, -Math.max(0,cA)*3]];
+  P.knees = [ik(P.H, P.feet[0], TH, SH, [1,-0.1]), ik(P.H, P.feet[1], TH, SH, [1,-0.1])];
+  P.N = [1.5, P.H[1]-22]; P.Hd = [3, P.N[1]-10];
+  P.S = [[1, P.N[1]+2], [1, P.N[1]+2]];
+  if (b.carry){ P.Hn = [[12,-39],[11,-38]]; armsTo(P, [0,1], [0,1]); P.prop = 'carry'; }
+  else {
+    const sw = [0.45*s, -0.45*s];
+    P.Hn = sw.map(t => [P.S[0][0] + 20*Math.sin(t), P.S[0][1] + 20*Math.cos(t)]);
+    armsTo(P, [-1,0.1], [-1,0.1]);
+  }
+  return P;
+}
+function poseRun(p){
+  const a = p * 13, P = {view:'side', flip:1, expr:'effort'};
+  P.H = [0, -30.5 - Math.abs(Math.sin(a)) * 1.6];
+  P.hips = [P.H, P.H];
+  P.feet = [0, 1].map(i => { const f = a + i*Math.PI; return [9*Math.sin(f), -Math.max(0, Math.cos(f))*8]; });
+  P.knees = P.feet.map(f => ik(P.H, f, TH, SH, [1,-0.3]));
+  P.N = [4, P.H[1]-21]; P.Hd = [7.5, P.N[1]-10];
+  P.S = [[3, P.N[1]+2],[3, P.N[1]+2]];
+  P.Hn = [0, 1].map(i => { const f = a + (1-i)*Math.PI; return [4 + 7*Math.sin(f), P.N[1] + 15 - 3*Math.cos(f)]; });
+  armsTo(P, [-1,0.6], [-1,0.6]);
+  return P;
+}
+function poseBike(p){
+  const a = p * 7, C = [-1,-12], P = {view:'side', flip:1, expr: 'effort'};
+  P.H = [-9,-35]; P.hips = [P.H, P.H];
+  P.feet = [[C[0]+7*Math.cos(a+Math.PI), C[1]+7*Math.sin(a+Math.PI)], [C[0]+7*Math.cos(a), C[1]+7*Math.sin(a)]];
+  P.knees = P.feet.map(f => ik(P.H, f, TH, SH, [1,-0.6]));
+  P.N = [5,-51]; P.Hd = [9.5,-60];
+  P.S = [[4,-49],[4,-49]]; P.Hn = [[15,-46],[16,-46]];
+  armsTo(P, [0,1], [0,1]);
+  return P;
+}
+function poseBench(p){
+  const s = 0.5 - 0.5*Math.cos(p*2.3), P = {view:'side', flip:1, expr: s > 0.4 ? 'effort' : 'smile', headRot:-Math.PI/2, lying:true};
+  P.H = [8,-25]; P.hips = [P.H, P.H];
+  P.feet = [[20,0],[25,0]];
+  P.knees = P.feet.map(f => ik(P.H, f, TH, SH, [0.3,-1]));
+  P.N = [-15,-25]; P.Hd = [-27,-27];
+  P.S = [[-14,-25],[-14,-25]];
+  const hy = -33 - s*15; P.Hn = [[-7,hy],[-7,hy]];
+  armsTo(P, [0.4,1], [0.4,1]);
+  P.prop = 'plateEnd';
+  return P;
+}
+function poseSquat(p){
+  const s = 0.5 - 0.5*Math.cos(p*2.2), P = {view:'front', flip:1, expr: s > 0.5 ? 'effort' : 'smile'};
+  P.H = [0, -30 + 13*s];
+  P.hips = [[-5, P.H[1]], [5, P.H[1]]];
+  P.feet = [[-9,0],[9,0]];
+  P.knees = [ik(P.hips[0], P.feet[0], TH, SH, [-1,-0.3]), ik(P.hips[1], P.feet[1], TH, SH, [1,-0.3])];
+  P.N = [0, P.H[1]-21]; P.Hd = [0, P.N[1]-10];
+  P.S = [[-8.5,P.N[1]+2],[8.5,P.N[1]+2]];
+  P.barY = P.N[1] + 0.5;
+  P.Hn = [[-15,P.barY],[15,P.barY]];
+  armsTo(P, [-0.3,1], [0.3,1]);
+  P.prop = 'barFront';
+  return P;
+}
+function poseCable(p){
+  const s = 0.5 - 0.5*Math.cos(p*2.4), P = {view:'front', flip:1, expr: s > 0.5 ? 'effort' : 'smile'};
+  P.H = [0,-21]; P.hips = [[-5,-21],[5,-21]];
+  P.knees = [[-6.5,-13],[6.5,-13]]; P.feet = [[-7,0],[7,0]]; P.seatedFront = true;
+  P.N = [0,-43]; P.Hd = [0,-53];
+  P.S = [[-8.5,-41],[8.5,-41]];
+  P.barY = -61 + s*14;
+  P.Hn = [[-18,P.barY],[18,P.barY]];
+  armsTo(P, [-1,0.4], [1,0.4]);
+  P.prop = 'cableBar';
+  return P;
+}
+function poseCurl(p){
+  const s = Math.sin(p*3.2), P = {view:'front', flip:1, H:[0,-30], N:[0,-52], Hd:[0,-62], expr:'effort'};
+  standLegs(P);
+  P.S = [[-8.5,-50],[8.5,-50]];
+  const uL = ease(Math.max(0,s)), uR = ease(Math.max(0,-s));
+  P.Hn = [[-11 + uL*0.5, -30 - uL*14], [11 - uR*0.5, -30 - uR*14]];
+  armsTo(P, [-1,0.3], [1,0.3]);
+  P.prop = 'dumbbells';
+  return P;
+}
+function posePress(p){
+  const u = 0.5 - 0.5*Math.cos(p*2.4), P = {view:'front', flip:1, H:[0,-30], N:[0,-52], Hd:[0,-62], expr: u > 0.5 ? 'effort':'smile'};
+  standLegs(P);
+  P.S = [[-8.5,-50],[8.5,-50]];
+  P.Hn = [[-13,-54-u*17],[13,-54-u*17]];
+  armsTo(P, [-1,0.4], [1,0.4]);
+  P.prop = 'dumbbells';
+  return P;
+}
+function posePushup(p){
+  const u = 0.5 - 0.5*Math.cos(p*3), P = {view:'side', flip:1, expr: u < 0.5 ? 'effort' : 'smile', lying:true, headRot:0.25};
+  P.S = [[11,-10-u*9.5],[11,-10-u*9.5]];
+  P.feet = [[-27,0],[-26,0]];
+  P.H = lerp2([-27,-3], P.S[0], 0.5); P.hips = [P.H, P.H];
+  P.knees = P.feet.map(f => lerp2(P.H, f, 0.5));
+  P.N = [P.S[0][0]+1, P.S[0][1]-0.5]; P.Hd = [P.S[0][0]+9.5, P.S[0][1]-2.5];
+  P.Hn = [[12,0],[13,0]];
+  armsTo(P, [-1,-0.3], [-1,-0.3]);
+  return P;
+}
+function poseCrunch(p){
+  const u = 0.5 - 0.5*Math.cos(p*2.6), th = 0.12 + 0.6*u, P = {view:'side', flip:1, expr: u > 0.5 ? 'effort' : 'smile', lying:true};
+  P.H = [4,-4]; P.hips = [P.H, P.H];
+  P.feet = [[20,0],[23,0]];
+  P.knees = P.feet.map(f => ik(P.H, f, TH, SH, [0.1,-1]));
+  P.N = [P.H[0] - 21*Math.cos(th), P.H[1] - 21*Math.sin(th)];
+  P.Hd = [P.N[0] - 10*Math.cos(th+0.25), P.N[1] - 10*Math.sin(th+0.25)];
+  P.headRot = -Math.PI/2 + th;
+  P.S = [P.N, P.N];
+  P.Hn = [[P.Hd[0]+1, P.Hd[1]-3],[P.Hd[0]+3, P.Hd[1]-2]];
+  armsTo(P, [0.6,-1], [0.6,-1]);
+  return P;
+}
+function poseYoga(p){
+  const t = p % 12, P = {view:'front', flip:1, expr:'happy'};
+  const sway = Math.sin(p*1.3)*0.8;
+  if (t < 6){ // tree pose
+    P.H = [0,-30]; P.hips = [[-4,-30],[4,-30]];
+    P.feet = [[-2,0],[-2,-16]];
+    P.knees = [ik(P.hips[0], P.feet[0], TH, SH, [-1,0]), [12,-22]];
+    P.N = [sway,-52]; P.Hd = [sway,-62];
+    P.S = [[-8.5+sway,-50],[8.5+sway,-50]];
+    P.Hn = [[sway,-70],[sway,-70]];
+    armsTo(P, [-1,0], [1,0]);
+  } else { // warrior II
+    P.H = [2,-26]; P.hips = [[-3,-26],[7,-26]];
+    P.feet = [[-16,0],[16,0]];
+    P.knees = [ik(P.hips[0], P.feet[0], TH, SH, [-1,-0.2]), ik(P.hips[1], P.feet[1], TH, SH, [1,-0.6])];
+    P.N = [2,-48]; P.Hd = [2.5,-58];
+    P.S = [[-6.5,-46],[10.5,-46]];
+    P.Hn = [[-27,-47+sway*0.3],[31,-47-sway*0.3]];
+    armsTo(P, [0,-1], [0,-1]);
+  }
+  return P;
+}
+function poseCook(p){
+  const P = {view:'back', flip:1, H:[0,-30], N:[0,-52], Hd:[0,-62]};
+  standLegs(P, 5);
+  P.S = [[-8.5,-50],[8.5,-50]];
+  P.Hn = [[-3,-43],[10 + 2*Math.cos(p*5), -45 + 1.2*Math.sin(p*5)]];
+  armsTo(P, [-1,0.6], [1,0.6]);
+  P.prop = 'spatula';
+  return P;
+}
+function posePrep(p){
+  const P = {view:'back', flip:1, H:[0,-30], N:[0,-52], Hd:[0,-62]};
+  standLegs(P, 5);
+  P.S = [[-8.5,-50],[8.5,-50]];
+  P.Hn = [[-6,-43],[9, -44 - Math.abs(Math.sin(p*7))*5]];
+  armsTo(P, [-1,0.6], [1,0.6]);
+  P.prop = 'knife';
+  return P;
+}
+function poseEat(b, p){
+  const P = {view:'side', flip: -(b.slot ? b.slot.side : 1)};
+  const u = ease(clamp((Math.sin(p*2.4) - 0.1) * 1.6, 0, 1));
+  P.expr = u > 0.6 ? 'chew' : 'happy';
+  P.H = [0,-22]; P.hips = [P.H, P.H];
+  P.knees = [[12,-23],[14,-23]]; P.feet = [[11,0],[14,0]];
+  P.N = [1,-44]; P.Hd = [2,-54];
+  P.S = [[1,-42],[1,-42]];
+  P.Hn = [[18,-40], lerp2([21,-41],[8,-51],u)];
+  armsTo(P, [0,1], [0,1]);
+  P.prop = 'fork';
+  return P;
+}
+
+/* ================= people: drawing ================= */
+function drawLeg(L, hip, knee, foot, far, view){
+  const col = far ? L.botD : L.botC, skin = far ? L.skinD : L.skin;
+  if (L.bottom === 'shorts'){
+    seg(hip, knee, 7.2, skin); seg(knee, foot, 5.8, skin);
+    seg(hip, lerp2(hip, knee, 0.8), 9, col);
+  } else {
+    const w = L.bottom === 'joggers' ? 8 : 7;
+    seg(hip, knee, w, col);
+    seg(knee, lerp2(knee, foot, 0.9), w - 1.3, col);
+    seg(lerp2(knee, foot, 0.86), foot, 4.6, skin);
+    if (L.bottom === 'joggers') seg(lerp2(knee, foot, 0.84), lerp2(knee, foot, 0.9), 6.6, far ? shade(L.botC,-0.32) : shade(L.botC,-0.12));
+  }
+  // shoe
+  const sc = far ? L.shoeD : L.shoe, sole = L.shoe === '#ffffff' || L.shoe === '#ececec' ? '#c9ced8' : '#f4f4f4';
+  if (view === 'front' || view === 'back'){
+    ell(foot[0], foot[1]-1.8, 4.3, 2.8, sc);
+    box(foot[0]-4.3, foot[1]-1.2, 8.6, 1.8, 0.9, sole);
+  } else {
+    box(foot[0]-3, foot[1]-4.6, 10, 4.6, 2.3, sc);
+    box(foot[0]-3, foot[1]-1.4, 10, 1.6, 0.8, sole);
+  }
+}
+function drawArm(L, sh, el, hand, far, thumb){
+  const skin = far ? L.skinD : L.skin, top = far ? L.topD : L.topC;
+  seg(sh, el, 5, skin); seg(el, hand, 4.4, skin);
+  if (L.top === 'tee') seg(sh, lerp2(sh, el, 0.58), 6.8, top);
+  if (L.top === 'long'){ seg(sh, el, 6.4, top); seg(el, lerp2(el, hand, 0.82), 5.4, top); }
+  if (L.armband && !far){ seg(lerp2(sh, el, 0.5), lerp2(sh, el, 0.78), 6.4, '#23252c'); }
+  circ(hand[0], hand[1], 2.7, skin);
+  if (thumb){ box(hand[0]-1, hand[1]-6.5, 2.4, 5, 1.2, skin); }
+}
+function drawTorso(L, N, Hp, view){
+  const dx = Hp[0]-N[0], dy = Hp[1]-N[1], d = Math.hypot(dx,dy) || 1, ux = dx/d, uy = dy/d, px = -uy, py = ux;
+  const ws = view === 'side' ? 6.4 : 9.2, wh = view === 'side' ? 6.2 : 7.6;
+  const wAt = t => ws + (wh - ws) * clamp(t,0,1);
+  const band = (t0, t1, col) => {
+    const a = [N[0]+ux*d*t0, N[1]+uy*d*t0], b = [N[0]+ux*d*t1, N[1]+uy*d*t1], w0 = wAt(t0), w1 = wAt(t1);
+    c.fillStyle = col; c.strokeStyle = col; c.lineWidth = 3; c.lineJoin = 'round';
+    c.beginPath(); c.moveTo(a[0]+px*w0, a[1]+py*w0); c.lineTo(b[0]+px*w1, b[1]+py*w1); c.lineTo(b[0]-px*w1, b[1]-py*w1); c.lineTo(a[0]-px*w0, a[1]-py*w0); c.closePath(); c.fill(); c.stroke();
+  };
+  band(-0.04, 1.06, L.skin);
+  if (L.top === 'crop'){ band(-0.04, 0.5, L.topC); band(0.84, 1.08, L.botC); }
+  else { band(-0.04, 0.9, L.topC); band(0.86, 1.08, L.botC); }
+  // soft shading on one side
+  c.save(); c.globalAlpha = 0.13;
+  const a = [N[0]-ux*d*0.04, N[1]-uy*d*0.04], b = [N[0]+ux*d*1.06, N[1]+uy*d*1.06];
+  c.fillStyle = '#000'; c.beginPath(); c.moveTo(a[0]+px*ws*0.2, a[1]+py*ws*0.2); c.lineTo(b[0]+px*wh*0.2, b[1]+py*wh*0.2); c.lineTo(b[0]+px*wh, b[1]+py*wh); c.lineTo(a[0]+px*ws, a[1]+py*ws); c.closePath(); c.fill();
+  c.restore();
+  if (view === 'front'){
+    if (L.top === 'tank' || L.top === 'crop'){ c.save(); c.translate(N[0],N[1]); c.rotate(Math.atan2(dy,dx)-Math.PI/2); ell(0, 1, 4.6, 3.6, L.skin); c.restore(); }
+    else { c.save(); c.translate(N[0],N[1]); c.rotate(Math.atan2(dy,dx)-Math.PI/2); ell(0, 0.6, 3.2, 2.3, L.skin); c.restore(); }
+  }
+}
+function hairBack(L, hx, hy, view){
+  const r = 9.6, col = L.hairC;
+  if (L.style === 'curly'){ circ(hx, hy-1, r+3.4, col); return; }
+  if (view === 'back') return;
+  if (L.style === 'long'){
+    if (view === 'side') box(hx-r-1.5, hy-5, 11, 22, 5, col);
+    else box(hx-r-1.6, hy-4, 2*r+3.2, 21, 6, col);
+  } else if (L.style === 'bob'){
+    if (view === 'side') box(hx-r-1.5, hy-5, 12, 14, 5, col);
+    else box(hx-r-1.8, hy-4, 2*r+3.6, 13, 5, col);
+  } else if (L.style === 'ponytail'){
+    if (view === 'side'){ ell(hx-r-2.5, hy+3, 3.4, 9, col, 0.25); circ(hx-r+0.6, hy-4, 2.2, shade(col, 0.25)); }
+    else { ell(hx+r+1.5, hy+3, 3.4, 9.5, col, -0.3); }
+  }
+}
+function hairCap(L, hx, hy, view, rot){
+  const r = 9.6, col = L.hairC, st = L.style;
+  c.save(); c.beginPath(); c.arc(hx, hy, r+1.3, 0, Math.PI*2); c.clip();
+  c.fillStyle = col;
+  if (st === 'buzz' || st === 'fade') c.globalAlpha = st === 'buzz' ? 0.82 : 1;
+  c.beginPath();
+  if (view === 'back'){
+    c.rect(hx-r-3, hy-r-3, 2*r+6, r+3 + (st === 'buzz' || st === 'fade' ? 3 : 6.5));
+  } else if (view === 'side'){
+    const hl = st === 'buzz' || st === 'fade' ? -6.5 : -5;
+    c.moveTo(hx-r-3, hy+8); c.lineTo(hx-r-3, hy-r-3); c.lineTo(hx+r+3, hy-r-3); c.lineTo(hx+r+3, hy+hl-1);
+    c.quadraticCurveTo(hx+4, hy+hl, hx+1, hy-1); c.quadraticCurveTo(hx-1.5, hy+4, hx-4, hy+8); c.closePath();
+  } else {
+    const hl = st === 'buzz' ? -5.5 : st === 'fade' ? -4.6 : -3.6;
+    c.moveTo(hx-r-3, hy+1); c.lineTo(hx-r-3, hy-r-3); c.lineTo(hx+r+3, hy-r-3); c.lineTo(hx+r+3, hy+1);
+    c.lineTo(hx+r-0.4, hy+1);
+    if (st === 'spiky' || st === 'short' || st === 'fade' || st === 'buzz'){
+      c.quadraticCurveTo(hx+r-1, hy+hl, hx+4, hy+hl-0.5); c.quadraticCurveTo(hx-1, hy+hl+1.6, hx-5, hy+hl-0.4); c.quadraticCurveTo(hx-r+1, hy+hl, hx-r+0.4, hy+1);
+    } else {
+      c.quadraticCurveTo(hx+r-0.5, hy+hl-1, hx+1, hy+hl-2.6); c.quadraticCurveTo(hx-r+0.5, hy+hl-1, hx-r+0.4, hy+1);
+    }
+    c.closePath();
+  }
+  c.fill();
+  c.globalAlpha = 1;
+  if (st === 'fade' && view !== 'back'){ c.fillStyle = 'rgba(0,0,0,0)'; }
+  c.restore();
+  if (st === 'spiky' && view !== 'back'){
+    c.fillStyle = col; c.beginPath();
+    const base = hy - r + 1;
+    for (let i = 0; i < 5; i++){ const x = hx - 8 + i*4; c.moveTo(x-2.6, base+2); c.lineTo(x+1.6, base - 4 - (i%2)*1.5); c.lineTo(x+2.6, base+2); }
+    c.fill();
+  }
+  if (st === 'bun'){ const bx = view === 'side' ? hx-3.5 : hx; circ(bx, hy-r-2.2, 4.8, col); circ(bx-1.3, hy-r-3.2, 1.6, L.hairL); }
+  if (st === 'curly'){ for (let i = 0; i < 9; i++){ const a = Math.PI + i/8*Math.PI; circ(hx + Math.cos(a)*(r+0.6), hy - 1 + Math.sin(a)*(r+0.6), 3.4, col); } }
+  if (st === 'ponytail' && view === 'back'){ ell(hx, hy+11, 3.2, 9, col); circ(hx, hy+2, 2, shade(col,0.25)); }
+  if (st === 'long' && view === 'back'){ box(hx-r-1, hy-2, 2*r+2, 20, 6, col); }
+  if (st === 'bob' && view === 'back'){ box(hx-r-1.5, hy-2, 2*r+3, 10, 4, col); }
+  if (st === 'bob' && view === 'front'){ box(hx-r-1.8, hy-4, 4.2, 12, 2, col); box(hx+r-2.4, hy-4, 4.2, 12, 2, col); }
+  if (st === 'long' && view === 'front'){ box(hx-r-1.8, hy-4, 4, 15, 2, col); box(hx+r-2.2, hy-4, 4, 15, 2, col); }
+  if (L.headband && view !== 'back'){
+    c.save(); c.beginPath(); c.arc(hx, hy, r+1.4, 0, Math.PI*2); c.clip();
+    box(hx-r-2, hy-6.6, 2*r+4, 3.4, 1, L.headband); c.restore();
+  } else if (L.headband){ box(hx-r-1, hy-6.6, 2*r+2, 3.4, 1, L.headband); }
+}
+function drawHead(b, P){
+  const L = b.look, hx = P.Hd[0], hy = P.Hd[1], r = 9.6, v = P.view, blink = b.blink < 0;
+  c.save(); c.translate(hx, hy); if (P.headRot) c.rotate(P.headRot);
+  hairBack(L, 0, 0, v);
+  if (v === 'front'){ circ(-r+0.2, 0.8, 2.3, L.skinD); circ(r-0.2, 0.8, 2.3, L.skinD); }
+  if (v === 'back'){ circ(-r+0.4, 0.8, 2.2, L.skinD); circ(r-0.4, 0.8, 2.2, L.skinD); }
+  circ(0, 0, r, L.skin);
+  // jaw shading
+  c.save(); c.beginPath(); c.arc(0,0,r,0,Math.PI*2); c.clip(); c.globalAlpha = 0.1; circ(v==='side'?-5:0, 8, 9, '#000'); c.restore();
+  const dark = '#2a1a14', ex = P.expr;
+  if (v === 'front'){
+    // brows
+    c.strokeStyle = L.hairC === '#d8b064' || L.hairC === '#ecc985' ? '#9a7340' : L.hairC; c.lineWidth = 1.2; c.lineCap = 'round';
+    const bt = ex === 'effort' ? 0.9 : 0;
+    c.beginPath(); c.moveTo(-5.2, -3.4 - bt*0.3); c.lineTo(-2, -3.8 + bt); c.moveTo(2, -3.8 + bt); c.lineTo(5.2, -3.4 - bt*0.3); c.stroke();
+    // eyes
+    if (ex === 'effort' || blink){ c.strokeStyle = dark; c.lineWidth = 1.1; c.beginPath(); c.moveTo(-4.6,-0.6); c.lineTo(-2.2,0); c.moveTo(4.6,-0.6); c.lineTo(2.2,0); c.stroke(); }
+    else if (ex === 'happy' || ex === 'chew'){ c.strokeStyle = dark; c.lineWidth = 1.1; c.beginPath(); c.arc(-3.4,0.4,1.6,Math.PI*1.1,Math.PI*1.9); c.moveTo(1.8,0); c.arc(3.4,0.4,1.6,Math.PI*1.1,Math.PI*1.9); c.stroke(); }
+    else { circ(-3.4,-0.4,1.3,dark); circ(3.4,-0.4,1.3,dark); circ(-3,-0.9,0.4,'#fff'); circ(3.8,-0.9,0.4,'#fff'); }
+    // nose
+    c.strokeStyle = L.skinDD; c.lineWidth = 0.9; c.beginPath(); c.arc(0, 1.6, 0.9, 0.2, Math.PI-0.2); c.stroke();
+    // cheeks
+    ell(-5.6, 3, 1.9, 1.2, 'rgba(240,110,110,.28)'); ell(5.6, 3, 1.9, 1.2, 'rgba(240,110,110,.28)');
+    // mouth
+    if (ex === 'effort'){ box(-2.8, 3.4, 5.6, 2.2, 0.8, '#fff'); c.strokeStyle = '#7a2a25'; c.lineWidth = 0.6; rr(-2.8,3.4,5.6,2.2,0.8); c.stroke(); line(-2.6,4.5,2.6,4.5,0.4,'#c9b8b0'); }
+    else if (ex === 'chew'){ ell(0, 4.2, 1.6, 1.1, '#7a2a25'); }
+    else {
+      c.fillStyle = '#7a2a25'; c.beginPath(); c.moveTo(-3.9, 2.9); c.quadraticCurveTo(0, 8.6, 3.9, 2.9); c.closePath(); c.fill();
+      c.fillStyle = '#fff'; c.beginPath(); c.moveTo(-3.5, 3.1); c.quadraticCurveTo(0, 4.9, 3.5, 3.1); c.closePath(); c.fill();
+    }
+  } else if (v === 'side'){
+    circ(-1.6, 0.8, 2.4, L.skinD); circ(-1.6, 0.8, 1.1, L.skinDD);
+    circ(9.2, 1.4, 1.7, L.skin);
+    c.strokeStyle = L.hairC; c.lineWidth = 1.2; c.lineCap = 'round'; c.beginPath(); c.moveTo(2.8, -3.6); c.lineTo(6, -3.2 + (ex === 'effort' ? 0.8 : 0)); c.stroke();
+    if (ex === 'effort' || blink){ line(3.4, -0.2, 5.8, 0.2, 1.1, dark); }
+    else if (ex === 'happy' || ex === 'chew'){ c.strokeStyle = dark; c.lineWidth = 1.1; c.beginPath(); c.arc(4.6, 0.4, 1.5, Math.PI*1.1, Math.PI*1.9); c.stroke(); }
+    else { circ(4.6, -0.3, 1.3, dark); circ(5, -0.8, 0.4, '#fff'); }
+    ell(4.6, 3.4, 1.7, 1.1, 'rgba(240,110,110,.28)');
+    if (ex === 'effort'){ box(5.2, 3.8, 3.6, 1.8, 0.7, '#fff'); }
+    else if (ex === 'chew'){ ell(6.6, 4.8, 1.3, 0.9, '#7a2a25'); }
+    else { c.fillStyle = '#7a2a25'; c.beginPath(); c.moveTo(4.2, 3.6); c.quadraticCurveTo(7.6, 7.2, 8.6, 3.4); c.closePath(); c.fill(); c.fillStyle = '#fff'; c.beginPath(); c.moveTo(4.6,3.7); c.quadraticCurveTo(7,5,8.3,3.6); c.closePath(); c.fill(); }
+  }
+  hairCap(L, 0, 0, v, P.headRot);
+  if (L.earbuds && v === 'front'){ circ(-r+0.4, 1.4, 1.2, '#f6f6f6'); circ(r-0.4, 1.4, 1.2, '#f6f6f6'); }
+  if (L.earbuds && v === 'side'){ circ(-1.6, 1.2, 1.2, '#f6f6f6'); }
+  c.restore();
+}
+
+function drawDBFront(x, y){ line(x-4.5, y, x+4.5, y, 1.8, '#b8bfcc'); box(x-8.5, y-3.6, 4.4, 7.2, 1.2, '#1f2129'); box(x+4.1, y-3.6, 4.4, 7.2, 1.2, '#1f2129'); }
+function drawBarFront(y, half){
+  line(-half, y, half, y, 2.2, '#cfd5df');
+  [[-half+2,'#c43a3a'],[-half+6.5,'#1f2a44'],[half-6.5,'#1f2a44'],[half-2,'#c43a3a']].forEach(([x,col]) => box(x-2.2, y-11, 4.4, 22, 1.4, col));
+  box(-half-1.5, y-1.6, 3, 3.2, 1, '#9aa3b2'); box(half-1.5, y-1.6, 3, 3.2, 1, '#9aa3b2');
+}
+function drawPlateEnd(x, y, col){ circ(x, y, 11.5, '#151821'); circ(x, y, 10, col); circ(x, y, 6.5, shade(col,-0.25)); circ(x, y, 2.2, '#cfd5df'); }
+
+function drawPropBack(b, P){
+  if (P.prop === 'barFront') drawBarFront(P.barY, 40);
+  if (P.prop === 'cableBar'){
+    line(0, P.barY, 0, -112, 1, '#cfd5df');
+    c.strokeStyle = '#3a3f52'; c.lineWidth = 2.6; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(-24, P.barY + 3); c.quadraticCurveTo(0, P.barY - 3, 24, P.barY + 3); c.stroke();
+  }
+}
+function drawPropFront(b, P){
+  const fc = b.cur ? b.cur.food : '#e9a23b';
+  if (P.prop === 'dumbbells'){ drawDBFront(P.Hn[0][0], P.Hn[0][1]); drawDBFront(P.Hn[1][0], P.Hn[1][1]); }
+  if (P.prop === 'plateEnd'){ const h = P.Hn[1]; line(h[0], h[1], h[0], h[1]+1, 2, '#cfd5df'); drawPlateEnd(h[0], h[1], '#c43a3a'); }
+  if (P.prop === 'fork'){ const h = P.Hn[1]; line(h[0], h[1], h[0]+3.5, h[1]-3.5, 1.3, '#d7dbe3'); }
+  if (P.prop === 'carry' || P.prop === 'carryFront'){
+    const x = P.prop === 'carry' ? 13 : 0, y = P.prop === 'carry' ? -40 : -40;
+    if (b.carry === 'plate'){ ell(x, y, 12, 3.6, '#fbfaf6'); ell(x, y-1.5, 7.5, 2.6, fc); circ(x+3.5, y-2.6, 1.8, '#6fb04e'); circ(x-3, y-2.4, 1.5, '#f2d27a'); }
+    else if (b.carry === 'pan'){ ell(x, y, 10, 3.2, '#2b2c33'); ell(x, y-0.8, 7.5, 2.2, fc); line(x-10, y, x-18, y+1, 2.2, '#2b2c33'); }
+    else if (b.carry === 'boxes'){ for (let i = 0; i < 3; i++){ box(x-8, y-6-i*6.4, 16, 6.2, 1.6, 'rgba(235,245,242,.95)'); box(x-6.5, y-4.6-i*6.4, 13, 3, 1, fc); box(x-8.5, y-6.6-i*6.4, 17, 1.6, 0.8, '#3fb5a0'); } }
+  }
+  if (P.prop === 'spatula'){ const h = P.Hn[1]; line(h[0], h[1], h[0]+2, h[1]+6, 1.4, '#3a2a1f'); }
+  if (P.prop === 'knife'){ const h = P.Hn[1]; line(h[0], h[1], h[0]+6, h[1]+2, 1.6, '#d7dbe3'); line(h[0]-2, h[1]-0.6, h[0], h[1], 2, '#2a2a2a'); }
+}
+
+function drawPerson(b){
+  const P = poseFor(b), L = b.look, v = P.view;
+  c.save(); c.translate(b.x, b.y); if (P.flip < 0) c.scale(-1, 1);
+  if (b.flash > 0){
+    const p = 1 - b.flash / 3; c.strokeStyle = `rgba(255,106,61,${(1 - p) * 0.9})`; c.lineWidth = 2.5;
+    c.beginPath(); c.ellipse(0, 1, 16 + p*28, 5 + p*9, 0, 0, Math.PI*2); c.stroke();
+  }
+  ell(P.lying ? -2 : 0, 1, P.lying ? 30 : 13, 3.6, 'rgba(0,0,0,.22)');
+  if (v === 'side'){
+    drawArm(L, P.S[0], P.E[0], P.Hn[0], true);
+    drawLeg(L, P.hips[0], P.knees[0], P.feet[0], true, 'side');
+    drawLeg(L, P.hips[1], P.knees[1], P.feet[1], false, 'side');
+    drawTorso(L, P.N, P.H, 'side');
+    seg(P.N, lerp2(P.N, P.Hd, 0.55), 5, L.skin);
+    drawPropBack(b, P);
+    drawHead(b, P);
+    drawArm(L, P.S[1], P.E[1], P.Hn[1], false);
+    drawPropFront(b, P);
+  } else if (v === 'back'){
+    drawLeg(L, P.hips[0], P.knees[0], P.feet[0], false, 'back');
+    drawLeg(L, P.hips[1], P.knees[1], P.feet[1], false, 'back');
+    drawArm(L, P.S[0], P.E[0], P.Hn[0], true);
+    drawArm(L, P.S[1], P.E[1], P.Hn[1], true);
+    drawPropFront(b, P);
+    drawTorso(L, P.N, P.H, 'back');
+    seg(P.N, lerp2(P.N, P.Hd, 0.55), 5, L.skin);
+    drawHead(b, P);
+  } else {
+    const hb = L.style === 'long' || L.style === 'bob';
+    if (hb){ c.save(); c.translate(P.Hd[0], P.Hd[1]); hairBack(L, 0, 0, 'front'); c.restore(); }
+    if (P.seatedFront){
+      // thighs come toward the camera
+      [0,1].forEach(i => { const col = i ? L.botC : L.botD; seg(P.hips[i], P.knees[i], 8.5, col); });
+      [0,1].forEach(i => drawLeg(L, P.knees[i], lerp2(P.knees[i], P.feet[i], 0.5), P.feet[i], false, 'front'));
+      [0,1].forEach(i => circ(P.knees[i][0], P.knees[i][1], 4.4, L.bottom === 'shorts' ? L.skin : L.botC));
+    } else {
+      drawLeg(L, P.hips[0], P.knees[0], P.feet[0], false, 'front');
+      drawLeg(L, P.hips[1], P.knees[1], P.feet[1], false, 'front');
+    }
+    drawTorso(L, P.N, P.H, 'front');
+    seg(P.N, lerp2(P.N, P.Hd, 0.55), 5, L.skin);
+    if (L.earbuds){ c.strokeStyle = 'rgba(246,246,246,.85)'; c.lineWidth = 0.6; c.beginPath(); c.moveTo(P.Hd[0]-9, P.Hd[1]+2); c.quadraticCurveTo(P.N[0]-5, P.N[1]+2, P.N[0]-1, P.N[1]+12); c.moveTo(P.Hd[0]+9, P.Hd[1]+2); c.quadraticCurveTo(P.N[0]+5, P.N[1]+2, P.N[0]-1, P.N[1]+12); c.stroke(); }
+    drawPropBack(b, P);
+    drawHead(b, P);
+    drawArm(L, P.S[0], P.E[0], P.Hn[0], false);
+    drawArm(L, P.S[1], P.E[1], P.Hn[1], false, P.thumb);
+    drawPropFront(b, P);
+  }
+  c.restore();
+
+  // name tag
+  c.font = `700 9.5px ${FB}`; c.textAlign = 'center'; c.textBaseline = 'middle';
+  const tw = c.measureText(b.name).width + 18, ty = b.y + 6;
+  box(b.x - tw/2, ty, tw, 14, 7, 'rgba(12,14,24,.8)');
+  circ(b.x - tw/2 + 7.5, ty + 7, 2.6, b.look.topC);
+  c.fillStyle = '#f5f3fa'; c.fillText(b.name, b.x + 4, ty + 7.5);
+}
+
+function drawBubble(b){
+  if (!b.bubble) return;
+  const fade = clamp(1 - (b.bubbleT - (b.mode === 'wait' ? 2.5 : 4.5)) / 0.6, 0, 1);
+  if (fade <= 0) return;
+  let txt = b.bubble; if (txt.length > 28) txt = txt.slice(0, 27) + '…';
+  const P = b.mode === 'act' ? b.act.kind : '';
+  const lift = (P === 'bench' || P === 'mat') ? 52 : 90;
+  c.save(); c.globalAlpha = fade;
+  c.font = `600 11px ${FB}`; c.textAlign = 'center'; c.textBaseline = 'middle';
+  const w = c.measureText(txt).width + 16, x = clamp(b.x, w/2 + 6, W - w/2 - 6), y = b.y - lift;
+  const bg = b.mode === 'wait' ? '#ffe9bd' : '#ffffff';
+  c.shadowColor = 'rgba(0,0,0,.25)'; c.shadowBlur = 6 * DPR; c.shadowOffsetY = 2 * DPR;
+  box(x - w/2, y - 10, w, 20, 10, bg);
+  c.shadowColor = 'transparent';
+  c.fillStyle = bg; c.beginPath(); c.moveTo(b.x - 5, y + 9); c.lineTo(b.x + 5, y + 9); c.lineTo(b.x, y + 15); c.fill();
+  c.fillStyle = '#1b1c2b'; c.fillText(txt, x, y + 0.5);
+  c.restore();
+}
+
+/* ================= static background (pre-rendered once per quality) ================= */
+let bgCanvas = null, lightCanvas = null;
+function offscreen(){ const o = document.createElement('canvas'); o.width = W*DPR; o.height = H*DPR; const x = o.getContext('2d'); x.setTransform(DPR,0,0,DPR,0,0); return [o, x]; }
+
+function buildBackground(){
+  const [o, x] = offscreen(); const save = c; c = x;
+  const R = rng(42);
+  c.fillStyle = '#0d101c'; c.fillRect(0, 0, W, H);
+
+  /* ---------- GYM ---------- */
+  c.fillStyle = vgrad(56, 152, ['#2c3144','#23283a']); c.fillRect(0, 56, 620, 96);
+  for (let xx = 0; xx < 620; xx += 22){ c.fillStyle = 'rgba(255,255,255,.025)'; c.fillRect(xx, 56, 1, 96); }
+  // mirrors
+  for (let i = 0; i < 4; i++){
+    const mx = 14 + i*100;
+    box(mx-2, 66, 100, 76, 2, '#141724');
+    c.fillStyle = vgrad(68, 140, ['#8a9bc4','#5a6992','#46527a']); c.fillRect(mx, 68, 96, 72);
+    c.save(); c.beginPath(); c.rect(mx, 68, 96, 72); c.clip();
+    c.fillStyle = 'rgba(255,255,255,.12)'; c.beginPath(); c.moveTo(mx+18,68); c.lineTo(mx+44,68); c.lineTo(mx+14,140); c.lineTo(mx-12,140); c.fill();
+    c.fillStyle = 'rgba(255,255,255,.06)'; c.beginPath(); c.moveTo(mx+56,68); c.lineTo(mx+64,68); c.lineTo(mx+34,140); c.lineTo(mx+26,140); c.fill();
+    // faint reflected gym
+    c.fillStyle = 'rgba(30,34,52,.35)'; c.fillRect(mx, 118, 96, 22);
+    c.restore();
+  }
+  // TV
+  box(436, 70, 112, 64, 4, '#0b0d14'); box(440, 74, 104, 56, 2, '#101828');
+  // clock
+  circ(586, 96, 18, '#e9ecf2'); circ(586, 96, 15.5, '#ffffff'); c.strokeStyle = '#1b1f2c'; c.lineWidth = 2.4; c.beginPath(); c.arc(586,96,17,0,Math.PI*2); c.stroke();
+  for (let i = 0; i < 12; i++){ const a = i/12*Math.PI*2; line(586+Math.cos(a)*12.5, 96+Math.sin(a)*12.5, 586+Math.cos(a)*14.5, 96+Math.sin(a)*14.5, i%3?0.8:1.6, '#1b1f2c'); }
+  // skirting + accent
+  c.fillStyle = '#ff6a3d'; c.fillRect(0, 146, 620, 2.5);
+  c.fillStyle = '#171a27'; c.fillRect(0, 148.5, 620, 4);
+  // floor: rubber tiles
+  c.fillStyle = vgrad(152, 560, ['#262b3d','#2b3044']); c.fillRect(0, 152, 620, 408);
+  for (let i = 0; i < 5200; i++){ c.fillStyle = R() < 0.5 ? 'rgba(255,255,255,.035)' : 'rgba(0,0,0,.07)'; c.fillRect(R()*620, 152 + R()*408, 1, 1); }
+  c.strokeStyle = 'rgba(0,0,0,.22)'; c.lineWidth = 1;
+  for (let xx = 0; xx <= 620; xx += 52){ c.beginPath(); c.moveTo(xx, 152); c.lineTo(xx, 560); c.stroke(); }
+  for (let yy = 152; yy <= 560; yy += 52){ c.beginPath(); c.moveTo(0, yy); c.lineTo(620, yy); c.stroke(); }
+  // turf lane
+  c.fillStyle = '#2f6e48'; c.fillRect(322, 474, 298, 86);
+  for (let i = 0; i < 2600; i++){ c.fillStyle = R()<0.5 ? 'rgba(120,200,120,.12)' : 'rgba(0,30,0,.14)'; c.fillRect(322 + R()*298, 474 + R()*86, 1, 2); }
+  for (let xx = 322; xx < 620; xx += 60){ c.fillStyle = 'rgba(255,255,255,.035)'; c.fillRect(xx, 474, 30, 86); }
+  c.fillStyle = 'rgba(255,255,255,.75)'; c.fillRect(322, 474, 298, 2);
+  // water cooler
+  box(590, 286, 22, 40, 3, '#e8ecf2'); box(592, 270, 18, 18, 7, 'rgba(120,190,255,.7)'); box(596, 300, 10, 6, 1, '#2b2f3a');
+
+  // treadmills (side view)
+  ST.treadmill.slots.forEach(s => {
+    const {x, y} = s;
+    ell(x, y+4, 46, 4, 'rgba(0,0,0,.28)');
+    line(x+34, y-8, x+28, y-58, 4, '#5a6283'); line(x+26, y-52, x+8, y-50, 3, '#6d7699');
+    box(x+16, y-70, 26, 15, 3, '#2a2f45'); box(x+15, y-71, 28, 3, 1.5, '#3c4363');
+    box(x-46, y-6, 88, 11, 4, '#191c28'); box(x-42, y-8, 76, 5, 2.5, '#2e3348');
+    box(x+30, y-14, 15, 16, 4, '#3a4058'); circ(x-41, y-4, 3, '#0f1119'); circ(x+33, y-4, 3, '#0f1119');
+    box(x-46, y+3, 6, 3, 1, '#0f1119'); box(x+36, y+3, 6, 3, 1, '#0f1119');
+  });
+  // spin bikes
+  ST.bike.slots.forEach(s => {
+    const {x, y} = s;
+    ell(x+2, y+3, 30, 3.5, 'rgba(0,0,0,.28)');
+    box(x-24, y-2, 18, 4, 2, '#151822'); box(x+12, y-2, 20, 4, 2, '#151822');
+    line(x-14, y, x-6, y-30, 4.5, '#2c3146'); line(x-1, y-12, x+15, y-37, 5, '#2c3146'); line(x-7, y-26, x+14, y-35, 4, '#2c3146'); line(x+12, y, x+18, y-12, 4, '#2c3146');
+    circ(x+18, y-12, 11.5, '#1a1d29'); circ(x+18, y-12, 9.5, '#8b94b5'); circ(x+18, y-12, 8, '#3a4058'); circ(x+18, y-12, 2.4, '#c9cfdc');
+    box(x-16, y-36.5, 14, 4.5, 2.2, '#16171d'); line(x-6, y-30, x-9, y-34, 3, '#c9cfdc');
+    line(x+14, y-35, x+15, y-46, 3, '#c9cfdc'); line(x+11, y-46, x+22, y-46, 3, '#16171d');
+    box(x-26, y-8, 6, 3, 1, '#ff6a3d');
+  });
+  // benches with rack
+  ST.bench.slots.forEach(s => {
+    const {x, y} = s;
+    ell(x-4, y+3, 38, 3.5, 'rgba(0,0,0,.28)');
+    line(x-20, y, x-20, y-58, 4.5, '#56607e'); box(x-30, y-2, 22, 4, 2, '#3a4058');
+    box(x-24, y-56, 9, 3.5, 1, '#9aa3b8');
+    line(x-24, y-13, x-24, y, 3.5, '#23273a'); line(x+16, y-13, x+16, y, 3.5, '#23273a'); line(x-26, y-13, x+20, y-13, 3, '#23273a');
+    box(x-33, y-21, 56, 8, 3.5, '#a5303f'); box(x-33, y-21, 56, 2.4, 1.2, '#c04558');
+    // plate tree
+    line(x+40, y, x+40, y-30, 3, '#56607e'); box(x+32, y-2, 16, 4, 2, '#3a4058');
+    [[-26,'#1f2a44'],[-18,'#c43a3a'],[-10,'#2f7d4c']].forEach(([dy,col]) => { circ(x+40, y+dy, 7, '#151821'); circ(x+40, y+dy, 6, col); circ(x+40, y+dy, 1.6, '#cfd5df'); });
+  });
+  // squat racks (back half)
+  ST.squat.slots.forEach(s => {
+    const {x, y} = s;
+    ell(x, y+5, 54, 5, 'rgba(0,0,0,.3)');
+    box(x-52, y-10, 104, 16, 3, '#1b1d26');
+    box(x-34, y-10, 68, 16, 2, '#7a5a3c'); for (let i = 0; i < 4; i++) c.fillRect(x-34, y-6+i*3.5, 68, 0.5);
+    c.fillStyle = 'rgba(0,0,0,.18)'; for (let i = 0; i < 4; i++) c.fillRect(x-34, y-6+i*3.5, 68, 0.6);
+    line(x-29, y-12, x-29, y-100, 4.5, '#3d4460'); line(x+29, y-12, x+29, y-100, 4.5, '#3d4460');
+    line(x-29, y-100, x+29, y-100, 4, '#3d4460');
+    line(x-29, y-100, x-35, y-94, 4, '#3d4460'); line(x+29, y-100, x+35, y-94, 4, '#3d4460');
+    // storage horns w/ plates
+    box(x-48, y-36, 4, 22, 1, '#1f2129'); box(x-50, y-38, 8, 26, 2, '#c43a3a');
+    box(x+44, y-36, 4, 22, 1, '#1f2129'); box(x+42, y-38, 8, 26, 2, '#1f2a44');
+  });
+  // kettlebells
+  [[296,'#1f2129',6],[312,'#2f7d4c',7],[330,'#c43a3a',8],[350,'#1f2a44',9]].forEach(([kx,col,r]) => {
+    ell(kx, 462, r+1, 2, 'rgba(0,0,0,.25)'); circ(kx, 455, r, col); c.strokeStyle = col; c.lineWidth = 2.4; c.beginPath(); c.arc(kx, 450-r*0.5, r*0.55, Math.PI*1.05, Math.PI*1.95); c.stroke();
+    circ(kx-r*0.3, 453-r*0.3, r*0.25, 'rgba(255,255,255,.12)');
+  });
+  // dumbbell rack
+  (() => {
+    const x0 = 120, x1 = 288, by = 490;
+    ell((x0+x1)/2, by+3, 90, 4, 'rgba(0,0,0,.28)');
+    line(x0+4, by, x0+4, by-46, 4, '#3d4460'); line(x1-4, by, x1-4, by-46, 4, '#3d4460');
+    line(x0, by-24, x1, by-30, 4, '#56607e'); line(x0, by-42, x1, by-48, 4, '#56607e');
+    for (let t = 0; t < 2; t++) for (let i = 0; i < 8; i++){
+      const dx = x0 + 12 + i*20, sz = 4 + i*0.55 + t*0.4, dy = (t ? by-46 : by-28) - i*0.75;
+      line(dx-5, dy-sz*0.6, dx+5, dy-sz*0.6, 1.8, '#b8bfcc');
+      box(dx-7-sz*0.4, dy-sz*1.3, sz*0.95, sz*1.4, 1, '#1f2129'); box(dx+7-sz*0.55, dy-sz*1.3, sz*0.95, sz*1.4, 1, '#1f2129');
+    }
+  })();
+  // cable machine
+  ST.cable.slots.forEach(s => {
+    const {x, y} = s;
+    ell(x+8, y+4, 46, 4, 'rgba(0,0,0,.3)');
+    box(x-38, y-4, 92, 8, 2, '#191c28');
+    line(x-32, y, x-32, y-118, 5, '#3d4460'); line(x+48, y, x+48, y-118, 5, '#3d4460'); line(x-32, y-118, x+48, y-118, 5, '#3d4460');
+    line(x+31, y-4, x+31, y-106, 1.4, '#9aa3b8'); line(x+41, y-4, x+41, y-106, 1.4, '#9aa3b8');
+    circ(x, y-114, 4, '#1f2129'); circ(x+36, y-114, 4, '#1f2129');
+    box(x-12, y-21, 24, 6, 3, '#16171d'); line(x, y-15, x, y, 3, '#2c3146');
+    box(x-14, y-32, 28, 5, 2.5, '#16171d');
+  });
+  // mats
+  ST.mat.slots.forEach((s, i) => {
+    const {x, y} = s;
+    c.fillStyle = 'rgba(0,0,0,.22)'; c.beginPath(); c.moveTo(x-36, y+8); c.lineTo(x+32, y+8); c.lineTo(x+38, y-6); c.lineTo(x-30, y-6); c.fill();
+    c.fillStyle = MATCOL[i]; c.beginPath(); c.moveTo(x-36, y+6); c.lineTo(x+32, y+6); c.lineTo(x+38, y-8); c.lineTo(x-30, y-8); c.closePath(); c.fill();
+    c.fillStyle = 'rgba(255,255,255,.15)'; c.beginPath(); c.moveTo(x-30, y-8); c.lineTo(x+38, y-8); c.lineTo(x+37, y-6); c.lineTo(x-31, y-6); c.fill();
+  });
+  // gym ceiling lights (fixtures on wall top)
+  [110, 310, 510].forEach(lx => { box(lx-30, 56, 60, 4, 2, '#11131c'); box(lx-28, 59, 56, 2, 1, '#f3f6ff'); });
+
+  /* ---------- KITCHEN ---------- */
+  c.fillStyle = vgrad(56, 170, ['#efe7da','#e8dfd0']); c.fillRect(660, 56, 620, 114);
+  // backsplash subway tiles
+  c.save(); c.beginPath(); c.rect(660, 112, 526, 52); c.clip();
+  c.fillStyle = '#f7f3ec'; c.fillRect(660, 112, 526, 52);
+  c.strokeStyle = '#ddd5c6'; c.lineWidth = 0.8;
+  for (let yy = 112, r = 0; yy < 164; yy += 8, r++){ c.beginPath(); c.moveTo(660, yy); c.lineTo(1186, yy); c.stroke(); for (let xx = 660 + (r%2)*8; xx < 1186; xx += 16){ c.beginPath(); c.moveTo(xx, yy); c.lineTo(xx, yy+8); c.stroke(); } }
+  c.restore();
+  // window over sink
+  box(908, 64, 80, 86, 3, '#fafafa');
+  c.fillStyle = vgrad(68, 146, ['#7fc2f2','#bfe3fb','#eaf6ff']); c.fillRect(913, 69, 70, 76);
+  [[930,92,10],[944,88,13],[962,94,9]].forEach(([cx,cy,r]) => circ(cx, cy, r, 'rgba(255,255,255,.85)'));
+  c.fillStyle = '#9cc4de'; [[913,128,14,17],[928,118,10,27],[939,132,16,13],[956,122,12,23],[969,130,14,15]].forEach(([a,b2,w2,h2]) => c.fillRect(a,b2,w2,h2));
+  c.fillStyle = '#5f9e5c'; c.fillRect(913, 140, 70, 5);
+  line(948, 69, 948, 145, 3, '#fafafa'); line(913, 106, 983, 106, 3, '#fafafa');
+  box(904, 148, 88, 5, 1.5, '#f2f2f2');
+  box(918, 136, 12, 12, 2, '#c8714f'); ell(924, 132, 8, 6, '#4f9a55'); ell(920, 128, 4, 6, '#62ad62', -0.4); ell(928, 127, 4, 6, '#62ad62', 0.4);
+  // hood
+  c.fillStyle = hgrad(722, 750, ['#b7bec9','#e6eaf0','#a8b0bb']); c.fillRect(724, 56, 24, 30);
+  c.fillStyle = hgrad(702, 770, ['#a8b0bb','#e9edf2','#b4bcc7']); c.beginPath(); c.moveTo(716, 86); c.lineTo(756, 86); c.lineTo(772, 112); c.lineTo(700, 112); c.closePath(); c.fill();
+  box(700, 110, 72, 4, 1, '#8d95a1'); box(710, 113, 52, 1.6, 0.8, 'rgba(255,240,200,.95)');
+  // upper cabinets
+  const cab = (x0, w2) => { box(x0, 60, w2, 50, 2, '#86a690'); const n = Math.round(w2/42); for (let i = 0; i < n; i++){ const dx = x0 + i*w2/n; box(dx+2, 62, w2/n-4, 46, 2, '#93b29c'); box(dx+w2/n/2-1, 98, 2, 7, 1, '#d8cfbf'); } box(x0, 108, w2, 3, 1, '#6f8d78'); };
+  cab(990, 190); cab(662, 34);
+  // open shelves
+  [[92],[128]].forEach(([sy]) => { box(790, sy, 108, 4, 1, '#a57a4f'); box(790, sy+4, 108, 1.4, 0.7, 'rgba(0,0,0,.15)'); });
+  [[798,'#e9a23b',12],[812,'#7bbf5a',14],[826,'#d9583b',11]].forEach(([jx,col,h2]) => { box(jx, 92-h2, 11, h2, 2, 'rgba(230,240,245,.75)'); box(jx+1.5, 92-h2*0.7, 8, h2*0.65, 1.5, col); box(jx+1, 92-h2-3, 9, 3, 1, '#8a6a4a'); });
+  box(848, 80, 16, 12, 3, '#d8d1c4'); ell(856, 77, 10, 7, '#5f9e5c'); ell(851, 72, 5, 7, '#6fb06a', -0.5); ell(861, 72, 5, 7, '#6fb06a', 0.5);
+  [[872,'#f2f2ee'],[884,'#f2f2ee']].forEach(([bx]) => { ell(bx, 125, 6, 3, '#f2f2ee'); box(bx-6, 118, 12, 7, 3, '#e6e2d8'); });
+  for (let i = 0; i < 5; i++) box(800 + i*6, 106, 5, 22, 1, ['#c7593e','#3b6f9c','#e1b54a','#3e7a55','#7d5ea8'][i]);
+  // countertop + base cabinets
+  box(660, 164, 526, 9, 1.5, '#ece7df'); box(660, 171, 526, 2.4, 1, '#cfc7ba');
+  c.fillStyle = vgrad(173, 214, ['#7f9e88','#6f8e78']); c.fillRect(660, 173, 526, 41);
+  for (let xx = 662; xx < 1184; xx += 44){ box(xx, 175, 41, 35, 2, '#86a690'); box(xx+18, 178, 5, 1.8, 0.9, '#d8cfbf'); }
+  c.fillStyle = '#2b2f2c'; c.fillRect(660, 210, 526, 4);
+  // range
+  c.fillStyle = hgrad(676, 796, ['#aeb5c0','#e3e7ed','#b8bfc9']); c.fillRect(676, 158, 120, 56);
+  box(676, 152, 120, 8, 1.5, '#9aa2ad'); for (let i = 0; i < 6; i++) circ(690 + i*18.5, 156, 2.5, '#2b2f37');
+  box(678, 160, 116, 6, 1, '#1d2026');
+  box(688, 176, 96, 3, 1.5, '#c9cfd8');
+  box(688, 182, 96, 26, 3, '#1c2027'); box(692, 186, 88, 18, 2, '#262b35'); c.fillStyle = 'rgba(255,255,255,.07)'; c.fillRect(692, 186, 30, 18);
+  // hob on counter
+  box(826, 162, 72, 5, 1.5, '#15161b'); circ(839, 164.5, 5, '#2b2d35'); circ(883, 164.5, 5, '#2b2d35');
+  // kettle, toaster
+  box(800, 148, 16, 16, 5, '#e65c3c'); box(804, 145, 8, 4, 2, '#2b2f37'); line(816, 152, 821, 150, 2, '#e65c3c'); circ(808, 154, 2, 'rgba(255,255,255,.35)');
+  // sink + faucet
+  box(914, 163, 68, 5, 2, '#9aa3ad'); box(918, 164, 60, 3, 1.5, '#5d6570');
+  c.strokeStyle = '#c4cad3'; c.lineWidth = 2.4; c.beginPath(); c.moveTo(948, 164); c.lineTo(948, 140); c.quadraticCurveTo(948, 132, 956, 132); c.quadraticCurveTo(962, 132, 962, 140); c.stroke();
+  box(944, 158, 8, 6, 1.5, '#c4cad3');
+  // blender, knife block, utensils
+  box(994, 160, 14, 5, 2, '#26282f'); c.fillStyle = 'rgba(200,230,240,.65)'; c.beginPath(); c.moveTo(995, 160); c.lineTo(1007, 160); c.lineTo(1010, 140); c.lineTo(992, 140); c.fill(); box(992, 136, 18, 4, 2, '#26282f');
+  box(1062, 150, 14, 14, 2, '#6b4a32'); [1064,1068,1072].forEach(kx => box(kx, 144, 2.2, 7, 1, '#1d1d22'));
+  box(1082, 150, 11, 14, 3, '#efece6'); line(1085, 150, 1083, 140, 1.6, '#a07a52'); line(1089, 150, 1092, 141, 1.6, '#2b2b2b');
+  // microwave
+  box(1134, 136, 46, 28, 3, '#2a2d34'); box(1137, 139, 30, 22, 2, '#151820'); box(1170, 140, 7, 6, 1, '#62e3a5'); for (let i = 0; i < 3; i++) box(1170, 148+i*4, 7, 2, 0.8, '#4a4e58');
+  // cutting boards (prep)
+  ST.prep.slots.forEach(s => box(s.x-14, 160, 40, 5, 2, '#c99a62'));
+  // fridge
+  c.fillStyle = hgrad(1186, 1268, ['#a9b1bc','#e7ebf0','#c2c9d2','#9aa2ad']); rr(1186, 58, 82, 156, 4); c.fill();
+  c.fillStyle = 'rgba(0,0,0,.25)'; c.fillRect(1226, 58, 1.4, 112); c.fillRect(1186, 170, 82, 1.4);
+  box(1220, 84, 3, 54, 1.5, '#7b838e'); box(1230, 84, 3, 54, 1.5, '#7b838e'); box(1210, 180, 34, 3, 1.5, '#7b838e');
+  box(1196, 80, 18, 26, 2, '#3a3f48'); box(1199, 98, 12, 6, 1, '#1f2329');
+  box(1240, 96, 10, 12, 1, '#ff6a3d'); box(1246, 112, 12, 9, 1, '#f2c14e'); box(1238, 124, 9, 9, 1, '#3fb5a0');
+  // floor: oak planks
+  c.fillStyle = '#c99a64'; c.fillRect(660, 214, 620, 346);
+  for (let yy = 214, row = 0; yy < 560; yy += 17, row++){
+    let xx = 660 - R()*120;
+    while (xx < 1280){
+      const w2 = 90 + R()*110, tone = ['#c99a64','#c2915c','#d0a26e','#bb8a55','#c6955f'][Math.floor(R()*5)];
+      c.fillStyle = tone; c.fillRect(Math.max(660, xx), yy, w2, 17);
+      c.fillStyle = 'rgba(80,45,15,.12)'; for (let g = 0; g < 3; g++) c.fillRect(Math.max(660, xx), yy + 3 + R()*11, w2, 0.6);
+      c.fillStyle = 'rgba(60,35,10,.35)'; c.fillRect(Math.max(660, xx), yy, 0.8, 17);
+      xx += w2;
+    }
+    c.fillStyle = 'rgba(60,35,10,.28)'; c.fillRect(660, yy, 620, 0.8);
+  }
+  // rugs under dining
+  [[945,334],[945,474]].forEach(([rx, ry]) => { c.fillStyle = 'rgba(0,0,0,.1)'; rr(rx-205, ry-40, 410, 62, 6); c.fill(); });
+  // chairs
+  ST.seat.slots.forEach(s => {
+    const sx = s.x, sy = s.y, bx = sx + s.side*9;
+    ell(sx, sy+2, 12, 2.5, 'rgba(0,0,0,.18)');
+    line(sx-7, sy-21, sx-7, sy, 2.4, '#5d3a22'); line(sx+7, sy-21, sx+7, sy, 2.4, '#5d3a22');
+    line(bx, sy-22, bx + s.side*2.5, sy-56, 3, '#6e4429'); box(bx + s.side*2.5 - 2.5, sy-58, 5, 18, 2, '#7a4c2e');
+    box(sx-10, sy-24, 20, 4, 2, '#8a5634');
+  });
+  // tables
+  TABLES.forEach(([tx, ty]) => {
+    ell(tx, ty+13, 60, 5, 'rgba(60,30,10,.22)');
+    [[-46,1],[44,1]].forEach(([lx]) => { box(tx+lx-2.5, ty-22, 5, 34, 1, '#6a4126'); });
+    [[-40],[38]].forEach(([lx]) => { box(tx+lx-2, ty-22, 4, 26, 1, '#5a3620'); });
+    c.fillStyle = '#b3784a'; rr(tx-56, ty-32, 112, 7, 2.5); c.fill();
+    c.fillStyle = '#9a6239'; rr(tx-56, ty-26, 112, 5, 2); c.fill();
+    c.fillStyle = 'rgba(255,255,255,.12)'; c.fillRect(tx-54, ty-32, 108, 1.5);
+    // centre bowl + glasses
+    ell(tx, ty-32, 10, 3.2, '#e9e4dc'); circ(tx-4, ty-35, 3, '#e8473b'); circ(tx+1, ty-36, 3, '#7bbf5a'); circ(tx+5, ty-34.5, 3, '#f2a33b');
+    [[-22],[22]].forEach(([gx]) => { c.fillStyle = 'rgba(210,235,250,.7)'; rr(tx+gx-2.5, ty-40, 5, 8, 1); c.fill(); c.fillStyle = 'rgba(140,200,240,.5)'; c.fillRect(tx+gx-2, ty-36, 4, 3.5); });
+  });
+  // kitchen ceiling pendants (base)
+  [815, 1075].forEach(px => { line(px, 0, px, 0, 1, '#000'); });
+
+  /* ---------- divider + lobby ---------- */
+  c.fillStyle = vgrad(56, 560, ['#1d2133','#171a29']); c.fillRect(620, 56, 40, 504);
+  c.fillStyle = '#2a2f47'; c.fillRect(620, 56, 40, 6);
+  c.fillStyle = 'rgba(255,255,255,.04)'; c.fillRect(620, 62, 3, 498);
+  // lobby: polished concrete
+  c.fillStyle = vgrad(560, 682, ['#1d2131','#171a28']); c.fillRect(0, 560, W, 122);
+  for (let i = 0; i < 2200; i++){ c.fillStyle = R() < 0.5 ? 'rgba(255,255,255,.03)' : 'rgba(0,0,0,.08)'; c.fillRect(R()*W, 562 + R()*120, 1.2, 1.2); }
+  c.fillStyle = 'rgba(255,255,255,.035)'; for (let xx = 0; xx < W; xx += 160) c.fillRect(xx, 564, 1, 118);
+  c.fillStyle = '#2c3250'; c.fillRect(0, 560, W, 3);
+  // doorway labels
+  const tag = (x, t) => { c.font = `800 11px ${FB}`; const w2 = c.measureText(t).width + 18; box(x - w2/2, 566, w2, 18, 9, 'rgba(255,255,255,.08)'); c.fillStyle = '#c9cce0'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(t, x, 575.5); };
+  tag(310, 'GYM'); tag(970, 'KITCHEN');
+  c.font = `600 11px ${FB}`; c.fillStyle = '#545b80'; c.textAlign = 'left'; c.fillText('THE HUB', 16, 576);
+  c.textAlign = 'right'; c.fillText('upload in the app and your character gets to work', W - 16, 576);
+  // plants in lobby corners
+  [[640, 600]].forEach(([px, py]) => { box(px-10, py-4, 20, 18, 4, '#3b3f52'); [[-8,-16,-0.5],[0,-22,0],[8,-16,0.5],[-4,-10,-0.9],[5,-10,0.9]].forEach(([dx,dy,rt]) => ell(px+dx, py+dy, 4.5, 10, '#3f8f5a', rt)); });
+
+  c = save; return o;
+}
+
+function buildLighting(){
+  const [o, x] = offscreen(); const save = c; c = x;
+  const pool = (cx, cy, rx, ry, col, a) => { c.save(); c.translate(cx, cy); c.scale(1, ry/rx); const g = c.createRadialGradient(0,0,0,0,0,rx); g.addColorStop(0, col.replace('A', a)); g.addColorStop(1, col.replace('A', 0)); c.fillStyle = g; c.beginPath(); c.arc(0,0,rx,0,Math.PI*2); c.fill(); c.restore(); };
+  [110, 310, 510].forEach(lx => pool(lx, 300, 170, 230, 'rgba(210,225,255,A)', 0.07));
+  TABLES.forEach(([tx, ty]) => pool(tx, ty-6, 110, 60, 'rgba(255,214,150,A)', 0.14));
+  // window light shaft
+  c.save(); c.globalAlpha = 0.07; c.fillStyle = '#fff6d8'; c.beginPath(); c.moveTo(913, 145); c.lineTo(983, 145); c.lineTo(1100, 420); c.lineTo(960, 420); c.closePath(); c.fill(); c.restore();
+  // vignette
+  const g = c.createRadialGradient(W/2, H/2, H*0.35, W/2, H/2, H*0.95); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.38)');
+  c.fillStyle = g; c.fillRect(0, 0, W, H);
+  c = save; return o;
+}
+
+/* ================= dynamic equipment (per frame) ================= */
+const activeOcc = (s, kind) => s.occ && s.occ.mode === 'act' && s.occ.act.kind === kind && !s.occ.path.length;
+function drawDynamic(t){
+  // TV heart-rate graph + neon
+  c.save(); c.beginPath(); c.rect(440, 74, 104, 56); c.clip();
+  c.strokeStyle = '#ff5c6c'; c.lineWidth = 1.4; c.beginPath();
+  for (let i = 0; i <= 104; i += 2){ const ph = (i + t*40) % 40, yv = ph > 18 && ph < 22 ? (ph < 20 ? -14 : 8) : 0; const yy = 108 + yv + Math.sin((i+t*40)*0.2)*1.2; i ? c.lineTo(440+i, yy) : c.moveTo(440+i, yy); }
+  c.stroke();
+  c.font = `700 9px ${FM}`; c.fillStyle = '#9fe2e0'; c.textAlign = 'left'; c.textBaseline = 'top';
+  c.fillText('BPM ' + (138 + Math.round(Math.sin(t*0.7)*6)), 446, 78);
+  c.fillStyle = '#f2c14e'; c.fillText('8 WEEKS', 500, 78);
+  c.restore();
+  // neon sign on mirror
+  c.save(); c.font = `800 26px ${FB}`; c.textAlign = 'left'; c.textBaseline = 'middle';
+  const flick = Math.sin(t*23) > 0.97 ? 0.4 : 1;
+  c.shadowColor = '#ff4f7b'; c.shadowBlur = 14 * DPR * flick; c.fillStyle = flick < 1 ? '#a3556a' : '#ffd1dc';
+  c.fillText('TRAIN HARD', 36, 100);
+  c.shadowColor = '#5ef0d6'; c.shadowBlur = 12 * DPR; c.fillStyle = '#d6fff8'; c.font = `800 15px ${FB}`;
+  c.fillText('EAT CLEAN · REPEAT', 224, 102);
+  c.restore();
+  // clock hands (local time)
+  const d = new Date(), hh = d.getHours()%12 + d.getMinutes()/60, mm = d.getMinutes() + d.getSeconds()/60;
+  line(586, 96, 586 + Math.sin(hh/12*Math.PI*2)*7.5, 96 - Math.cos(hh/12*Math.PI*2)*7.5, 2, '#1b1f2c');
+  line(586, 96, 586 + Math.sin(mm/60*Math.PI*2)*11, 96 - Math.cos(mm/60*Math.PI*2)*11, 1.4, '#1b1f2c');
+  line(586, 96, 586 + Math.sin(d.getSeconds()/60*Math.PI*2)*12, 96 - Math.cos(d.getSeconds()/60*Math.PI*2)*12, 0.6, '#ff6a3d');
+
+  // treadmills
+  ST.treadmill.slots.forEach(s => {
+    const on = activeOcc(s, 'treadmill');
+    box(s.x+19, s.y-67, 20, 9, 1.5, on ? '#0e2a26' : '#11141e');
+    c.font = `600 5.5px ${FM}`; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillStyle = on ? '#5ef0d6' : '#4a5070';
+    c.fillText(on ? (9.5 + Math.sin(t*0.3+s.x)*1.2).toFixed(1) + ' km/h' : 'READY', s.x+29, s.y-62.3);
+    if (on){ c.save(); c.beginPath(); c.rect(s.x-42, s.y-8, 76, 5); c.clip(); c.fillStyle = '#3d4360'; const off = (t*120) % 10; for (let i = -50; i < 40; i += 10) c.fillRect(s.x + i - off, s.y-8, 2, 5); c.restore(); }
+  });
+  // bikes: crank + spinning flywheel
+  ST.bike.slots.forEach(s => {
+    const on = activeOcc(s, 'bike'), a = on ? s.occ.phase*7 : 0.6;
+    const fw = on ? s.occ.phase*16 : 0;
+    for (let i = 0; i < 3; i++){ const aa = fw + i*Math.PI*2/3; line(s.x+18, s.y-12, s.x+18+Math.cos(aa)*7.5, s.y-12+Math.sin(aa)*7.5, 1, '#7e88aa'); }
+    const C = [s.x-1, s.y-12];
+    [[a+Math.PI,'#1a1c24'],[a,'#2a2d38']].forEach(([aa,col]) => { const px = C[0]+7*Math.cos(aa), py = C[1]+7*Math.sin(aa); line(C[0], C[1], px, py, 2.4, '#9aa3b8'); box(px-3, py-1, 6, 2.4, 1, col); });
+    circ(C[0], C[1], 3, '#c9cfdc');
+  });
+  // bench bars on hooks when free
+  ST.bench.slots.forEach(s => { if (!activeOcc(s, 'bench')) drawPlateEnd(s.x-20, s.y-58, '#c43a3a'); });
+  ST.squat.slots.forEach(s => { if (!activeOcc(s, 'squat')){ c.save(); c.translate(s.x, s.y); drawBarFront(-52, 40); c.restore(); } });
+  // cable weight stack
+  ST.cable.slots.forEach(s => {
+    const on = activeOcc(s, 'cable'), lift = on ? (0.5-0.5*Math.cos(s.occ.phase*2.4))*12 : 0;
+    for (let i = 0; i < 9; i++){ const yy = s.y - 8 - i*5.5 - (i >= 6 ? lift : 0); box(s.x+28, yy-4.5, 16, 4.8, 1, i >= 6 ? '#2c3146' : '#23273a'); }
+    c.strokeStyle = '#cfd5df'; c.lineWidth = 0.9; c.beginPath(); c.moveTo(s.x, s.y-114); c.lineTo(s.x+36, s.y-114); c.lineTo(s.x+36, s.y-8-8*5.5-lift-4); c.stroke();
+    if (!on){ line(s.x, s.y-114, s.x, s.y-68, 0.9, '#cfd5df'); c.strokeStyle = '#3a3f52'; c.lineWidth = 2.6; c.beginPath(); c.moveTo(s.x-22, s.y-64); c.quadraticCurveTo(s.x, s.y-70, s.x+22, s.y-64); c.stroke(); }
+  });
+  // stoves
+  ST.stove.slots.forEach(s => {
+    const on = activeOcc(s, 'cook'), px = s.x + 13, py = 162;
+    if (on){
+      for (let i = 0; i < 6; i++){ const f = Math.sin(t*22 + i*1.7)*1.5; c.fillStyle = i%2 ? 'rgba(255,170,60,.9)' : 'rgba(80,140,255,.85)'; c.beginPath(); c.moveTo(px-9+i*3.4, py+2); c.lineTo(px-8+i*3.4, py-1-f); c.lineTo(px-7+i*3.4, py+2); c.fill(); }
+      ell(px, py-1, 11, 3.6, '#2b2c33'); line(px+10, py-1, px+20, py-3, 2.2, '#2b2c33');
+      const fc = s.occ.cur ? s.occ.cur.food : '#e9a23b';
+      ell(px, py-2, 8, 2.4, fc);
+      const hop = Math.abs(Math.sin(s.occ.phase*4.5));
+      circ(px-3, py-4-hop*7, 1.8, '#6fb04e'); circ(px+3, py-3-(1-hop)*5, 1.6, fc); circ(px, py-3-hop*4, 1.4, '#f2d27a');
+      if (s.x < 800){ box(692, 186, 88, 18, 2, 'rgba(255,150,60,.18)'); }
+    }
+  });
+  // prep counters
+  ST.prep.slots.forEach(s => {
+    const o = s.occ, on = activeOcc(s, 'pack');
+    if (on){
+      const prog = o.act.t / o.act.dur, fc = o.cur ? o.cur.food : '#e9a23b';
+      for (let i = 0; i < 6; i++) circ(s.x+13+(i%3)*3.5, 160-Math.floor(i/3)*2.4, 1.4, ['#6fb04e','#e8473b','#f2d27a'][i%3]);
+      const n = Math.min(5, Math.floor(prog*6));
+      for (let i = 0; i < n; i++){ const bx = s.x - 38 + (i%3)*10, by = 158 - Math.floor(i/3)*6; box(bx, by, 9, 6, 1.3, 'rgba(235,245,242,.95)'); box(bx+1, by+1.5, 7, 3, 0.8, fc); box(bx-0.5, by-0.6, 10, 1.4, 0.6, '#3fb5a0'); }
+    }
+  });
+  // plates while eating
+  ST.seat.slots.forEach(s => {
+    const o = s.occ;
+    if (o && activeOcc(s, 'eat')){
+      const px = s.tx + s.side*40, py = s.ty - 33, left = 1 - o.act.t / o.act.dur;
+      ell(px, py, 12, 3.6, '#fbfaf6'); ell(px, py-0.5, 9, 2.6, '#efece6');
+      if (left > 0.05){ ell(px, py-1.2, 7*left+1, 2.2*left+0.4, o.cur.food); if (left > 0.4) circ(px+3, py-2, 1.6, '#6fb04e'); if (left > 0.6) circ(px-3, py-2, 1.4, '#f2d27a'); }
+    }
+  });
+}
+function drawForeground(){
+  // front posts of the squat racks sit in front of the lifter
+  ST.squat.slots.forEach(s => {
+    const {x, y} = s;
+    line(x-35, y-4, x-35, y-94, 4.5, '#56607e'); line(x+35, y-4, x+35, y-94, 4.5, '#56607e');
+    line(x-35, y-94, x+35, y-94, 4, '#56607e');
+    box(x-40, y-56, 7, 4, 1, '#9aa3b8'); box(x+33, y-56, 7, 4, 1, '#9aa3b8');
+    line(x-35, y-26, x-24, y-26, 3, '#9aa3b8'); line(x+35, y-26, x+24, y-26, 3, '#9aa3b8');
+  });
+}
+
+/* ================= HUD ================= */
+function drawHUD(t){
+  c.fillStyle = vgrad(0, 56, ['#0c0f1a','#0a0d17']); c.fillRect(0, 0, W, 56);
+  c.fillStyle = '#20253a'; c.fillRect(0, 55, W, 1);
+  box(14, 16, 58, 24, 6, LIVE);
+  circ(27, 28, 4, `rgba(255,255,255,${0.55 + Math.sin(t*4)*0.45})`);
+  c.font = `800 13px ${FB}`; c.fillStyle = '#1a0d07'; c.textAlign = 'left'; c.textBaseline = 'middle'; c.fillText('LIVE', 36, 28.5);
+  c.font = `800 22px ${FB}`; c.fillStyle = '#f4f1fa'; c.fillText('8 WEEK TRANSFORMATION', 86, 23);
+  c.font = `400 10.5px ${FM}`; c.fillStyle = '#8f93b0'; c.fillText('every character is a real member · live from the challenge app', 87, 43);
+  const st = [['MEMBERS', bots.size], ['MEALS', stats.meals], ['WORKOUTS', stats.workouts]];
+  c.font = `800 14px ${FB}`; const hw = c.measureText(settings.head).width;
+  c.font = `600 11.5px ${FM}`; const lineTwo = settings.link + (settings.code ? '  ·  code ' + settings.code : ''); const lw = c.measureText(lineTwo).width;
+  const cw = Math.max(hw, lw) + 28, cx = W - 12 - cw;
+  box(cx, 7, cw, 42, 9, LIVE);
+  c.font = `800 14px ${FB}`; c.fillStyle = '#1a0d07'; c.fillText(settings.head, cx + 14, 21);
+  c.font = `600 11.5px ${FM}`; c.fillText(lineTwo, cx + 14, 37.5);
+  let sx = cx - 22; c.textAlign = 'right';
+  for (let i = st.length - 1; i >= 0; i--){
+    const [lab, val] = st[i];
+    c.font = `800 21px ${FB}`; c.fillStyle = '#f4f1fa'; c.fillText(String(val), sx, 23);
+    c.font = `600 9px ${FM}`; c.fillStyle = '#8f93b0'; c.fillText(lab, sx, 43);
+    c.font = `800 21px ${FB}`; const w1 = c.measureText(String(val)).width; c.font = `600 9px ${FM}`; const w2 = c.measureText(lab).width;
+    sx -= Math.max(w1, w2) + 22;
+  }
+}
+function drawTicker(){
+  const y0 = 682;
+  c.fillStyle = '#0a0d17'; c.fillRect(0, y0, W, H - y0);
+  c.fillStyle = '#20253a'; c.fillRect(0, y0, W, 1);
+  c.save(); c.beginPath(); c.rect(118, y0, W - 118, H - y0); c.clip();
+  c.font = `600 14px ${FB}`; c.textBaseline = 'middle'; c.textAlign = 'left';
+  const text = feed.length ? feed.join('     •     ') + '     •     ' : 'Waiting for the first upload…     •     ';
+  const tw = c.measureText(text).width;
+  if (tickerX < -tw) tickerX += tw;
+  c.fillStyle = '#d9dcf0';
+  for (let x = 130 + tickerX; x < W; x += tw) c.fillText(text, x, y0 + 19.5);
+  c.restore();
+  box(12, y0 + 9, 96, 22, 6, '#262b42');
+  c.font = `800 11px ${FB}`; c.fillStyle = LIVE; c.textAlign = 'center'; c.fillText('UPLOADS', 60, y0 + 20.5);
+}
+function drawFX(){
+  for (const p of particles){
+    const a = p.life / p.max;
+    if (p.kind === 'steam') circ(p.x, p.y, 2.5 + (1 - a)*6, `rgba(255,255,255,${a*0.5})`);
+    else { c.fillStyle = `rgba(140,205,255,${a})`; c.beginPath(); c.ellipse(p.x, p.y, 1.3, 2, 0, 0, Math.PI*2); c.fill(); }
+  }
+  c.font = `800 11.5px ${FB}`; c.textAlign = 'center'; c.textBaseline = 'middle';
+  for (const p of pops){ const a = Math.min(1, p.life / 0.5); c.fillStyle = `rgba(255,106,61,${a})`; c.fillText(p.text, p.x, p.y); }
+}
+
+function render(){
+  c = main;
+  c.setTransform(DPR,0,0,DPR,0,0);
+  c.drawImage(bgCanvas, 0, 0, W, H);
+  drawDynamic(clock);
+  const list = [...bots.values()].sort((a, b) => a.y - b.y);
+  for (const b of list) drawPerson(b);
+  drawForeground();
+  drawFX();
+  c.drawImage(lightCanvas, 0, 0, W, H);
+  for (const b of list) drawBubble(b);
+  drawHUD(clock);
+  drawTicker();
+}
+
+function setQuality(q){
+  DPR = q; cv.width = Math.round(W*DPR); cv.height = Math.round(H*DPR);
+  bgCanvas = buildBackground(); lightCanvas = buildLighting();
+}
+
+/* ================= loop ================= */
+let lastT = performance.now();
+function frame(now){
+  const dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
+  update(dt); render();
+  requestAnimationFrame(frame);
+}
+
+for (let i = 0; i < 18; i++) pushUpload(demoEvent());
+for (let i = 0; i < 330; i++) update(1/30);
+
+const start = () => { setQuality(settings.quality); render(); requestAnimationFrame(t => { lastT = t; frame(t); }); };
+(document.fonts && document.fonts.load) ? Promise.all([document.fonts.load(`800 20px ${FB}`), document.fonts.load(`600 10px ${FM}`)]).then(start, start) : start();
+
+/* ================= live feed hookup (self-hosted only) ================= */
+function ingest(data){ (Array.isArray(data) ? data : [data]).forEach(pushUpload); }
+if (FEED.websocketUrl){
+  const connect = () => { try { const ws = new WebSocket(FEED.websocketUrl);
+    ws.onmessage = m => { try { ingest(JSON.parse(m.data)); } catch(e) {} };
+    ws.onclose = () => setTimeout(connect, 3000); } catch(e) { setTimeout(connect, 5000); } };
+  connect();
+}
+if (FEED.pollUrl){
+  const poll = () => fetch(FEED.pollUrl).then(r => r.json()).then(ingest).catch(() => {}).finally(() => setTimeout(poll, FEED.pollEveryMs));
+  poll();
+}
+
+/* ================= producer console ================= */
+const $ = id => document.getElementById(id);
+$('cHead').value = settings.head; $('cLink').value = settings.link; $('cCode').value = settings.code;
+$('demo').checked = settings.demo; $('pace').value = String(settings.pace); $('quality').value = String(settings.quality);
+$('cHead').addEventListener('input', e => { settings.head = e.target.value.toUpperCase() || ' '; saveSettings(); });
+$('cLink').addEventListener('input', e => { settings.link = e.target.value; saveSettings(); });
+$('cCode').addEventListener('input', e => { settings.code = e.target.value.toUpperCase(); saveSettings(); });
+$('demo').addEventListener('change', e => { settings.demo = e.target.checked; saveSettings(); });
+$('pace').addEventListener('change', e => { settings.pace = parseFloat(e.target.value) || 1; saveSettings(); });
+$('quality').addEventListener('change', e => { settings.quality = parseFloat(e.target.value) || 3; saveSettings(); setQuality(settings.quality); });
+$('chips').addEventListener('click', e => { const bt = e.target.closest('button'); if (!bt) return; $('tType').value = bt.dataset.t; $('tWhat').value = bt.dataset.w; });
+$('testForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const name = $('tName').value.trim() || 'Member';
+  pushUpload({user: {id: 'test-' + name.toLowerCase(), name}, type: $('tType').value, title: $('tWhat').value.trim()});
+});
+$('fs').addEventListener('click', () => { const p = cv.requestFullscreen && cv.requestFullscreen(); if (p && p.catch) p.catch(() => {}); });
+</script>
+
+</html>
